@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter run *)",
+      "Bash(pkill -f \"python run.py\")",
+      "Bash(python run.py)",
+      "Bash(curl -s http://127.0.0.1:8000/api/banks)",
+      "Bash(pkill -f uvicorn)",
+      "Bash(python -c \"from app.models.kb_bank import KbBank; print\\('Model OK'\\)\")",
+      "Bash(pip show *)",
+      "Bash(python -c ' *)",
+      "Bash(curl -s http://127.0.0.1:8000/api/banks/tree)",
+      "Bash(taskkill /F /IM python.exe)",
+      "Bash(tasklist)",
+      "Bash(python *)",
+      "Bash(netstat -ano)",
+      "Bash(findstr :8000)",
+      "Bash(powershell Get-Process -Name python | Stop-Process -Force *)",
+      "Bash(curl *)",
+      "Bash(taskkill /F /IM chrome.exe)",
+      "Bash(findstr :8080)",
+      "Bash(taskkill /F /PID 17828)",
+      "Bash(powershell \"Stop-Process -Id 17828 -Force\")",
+      "Bash(claude config *)",
+      "Skill(update-config)",
+      "Bash(flutter pub *)",
+      "Bash(flutter analyze *)",
+      "WebFetch(domain:minimax-algeng-chat-tts.oss-cn-wulanchabu.aliyuncs.com)",
+      "Bash(.venv/Scripts/python.exe -c \"from app.services.oss import list_objects; r = list_objects\\(''\\); print\\('dirs:', [x['key'] for x in r if x['is_dir']]\\)\")",
+      "Bash(taskkill //F //PID 19052)",
+      "Bash(taskkill //F //PID 21352)",
+      "Bash(taskkill //F //IM python.exe)",
+      "Bash(unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY)"
+    ]
+  }
+}
