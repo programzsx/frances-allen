@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.database import engine, Base
-from app.routers import kb_bank, kb_tag, kb_qa, oss, douyin_movie, douyin_video, douyin_slice
+from app.routers import kb_bank, kb_tag, kb_qa, oss
 
 app = FastAPI(
     title="Frances Allen API",
@@ -44,10 +44,6 @@ app.include_router(kb_bank.router)
 app.include_router(kb_tag.router)
 app.include_router(kb_qa.router)
 app.include_router(oss.router)
-app.include_router(douyin_movie.router)
-app.include_router(douyin_video.router)
-app.include_router(douyin_slice.router)
-
 
 @app.get("/", summary="健康检查")
 def root():

@@ -19,7 +19,8 @@ class Settings(BaseSettings):
     OSS_BUCKET: str
 
     def __init__(self, **kwargs):
-        # Force .env file values to override environment variables
+        # Load .env file only for keys not already in environment,
+        # so Docker -e flags take precedence.
         import os
         if os.path.exists(".env"):
             with open(".env", "r") as f:
@@ -27,7 +28,8 @@ class Settings(BaseSettings):
                     line = line.strip()
                     if line and not line.startswith("#") and "=" in line:
                         key, val = line.split("=", 1)
-                        os.environ[key] = val
+                        if key not in os.environ:
+                            os.environ[key] = val
         super().__init__(**kwargs)
         print(f"[Config] Loaded OSS_ENDPOINT={self.OSS_ENDPOINT}, OSS_BUCKET={self.OSS_BUCKET}")
 

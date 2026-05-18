@@ -98,9 +98,3 @@ def get_signed_url(key: str, expires: int = 3600) -> str:
 def get_public_url(key: str) -> str:
     """获取公共URL"""
     return f"https://{settings.OSS_BUCKET}.{settings.OSS_ENDPOINT}/{key}"
-
-
-def list_videos(prefix: str = "") -> list[dict]:
-    """列出指定前缀下的视频文件(.mp4)"""
-    objects = list_objects(prefix)
-    return [obj for obj in objects if not obj["is_dir"] and obj["key"].endswith(".mp4")]
