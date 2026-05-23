@@ -1,166 +1,292 @@
 import 'package:flutter/material.dart';
 
 class DesktopTheme {
-  static const primary = Color(0xFF6366F1);
-  static const indigo50 = Color(0xFFEEF2FF);
-  static const indigo100 = Color(0xFFE0E7FF);
-  static const bgPrimary = Color(0xFFF8FAFC);
-  static const bgCard = Color(0xFFFFFFFF);
+  // ── Red Palette (Alan Perlis style) ──────────────────
+  static const primary   = Color(0xFFE53935); // Red 600
+  static const primaryBg = Color(0xFFFFEBEE); // Red 50
+  static const surface   = Color(0xFFFFFFFF);
+  static const bg        = Color(0xFFF5F5F5);
+  static const textMain  = Color(0xFF212121);
+  static const textSoft  = Color(0xFF757575);
+  static const textHint  = Color(0xFFBDBDBD);
+  static const accent    = Color(0xFFFFA000);
+  static const danger    = Color(0xFFD32F2F);
+  static const success   = Color(0xFF43A047);
+  static const divider   = Color(0xFFEEEEEE);
   static const bgSection = Color(0xFFF1F5F9);
-  static const textPrimary = Color(0xFF0F172A);
-  static const textSecondary = Color(0xFF64748B);
-  static const textTertiary = Color(0xFF94A3B8);
-  static const green = Color(0xFF10B981);
-  static const red = Color(0xFFEF4444);
-  static const orange = Color(0xFFF59E0B);
-  static const border = Color(0xFFE2E8F0);
+
+  // ── 兼容旧代码的别名 ──────────────────────────────────
+  static const indigo50  = Color(0xFFFFEBEE);
+  static const indigo100 = Color(0xFFFFCDD2);
+
+  static const bgPrimary     = bg;
+  static const bgCard        = surface;
+  static const textPrimary   = textMain;
+  static const textSecondary = textSoft;
+  static const textTertiary  = textHint;
+  static const border        = divider;
+  static const green         = success;
+  static const red           = danger;
+  static const orange        = accent;
+
+  static const _font = 'Microsoft YaHei';
 
   static ThemeData get lightTheme => ThemeData(
-        useMaterial3: true,
-        fontFamily: 'Microsoft YaHei',
-        scaffoldBackgroundColor: bgPrimary,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: primary,
-          brightness: Brightness.light,
-          surface: bgCard,
-          background: bgPrimary,
+    useMaterial3: true,
+    brightness: Brightness.light,
+    colorSchemeSeed: primary,
+    scaffoldBackgroundColor: bg,
+    fontFamily: _font,
+
+    appBarTheme: const AppBarTheme(
+      backgroundColor: surface,
+      foregroundColor: textMain,
+      elevation: 0,
+      scrolledUnderElevation: 0.5,
+      centerTitle: true,
+      titleTextStyle: TextStyle(
+        color: textMain,
+        fontSize: 17,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+
+    cardTheme: CardThemeData(
+      color: surface,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    ),
+
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: const Color(0xFFF5F5F5),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: primary, width: 1.5),
+      ),
+      hintStyle: const TextStyle(color: textHint, fontSize: 14),
+    ),
+
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: primary,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
         ),
-        cardTheme: CardThemeData(
-          elevation: 0,
-          color: bgCard,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: const BorderSide(color: border, width: 1),
-          ),
+        textStyle: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          fontFamily: _font,
         ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: bgCard,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: const BorderSide(color: border),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: const BorderSide(color: border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: const BorderSide(color: primary, width: 2),
-          ),
+      ),
+    ),
+
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: textSoft,
+        side: const BorderSide(color: divider),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
         ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: primary,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
-            textStyle: const TextStyle(fontFamily: 'Microsoft YaHei', fontSize: 14),
-          ),
-        ),
-        outlinedButtonTheme: OutlinedButtonThemeData(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: textSecondary,
-            side: const BorderSide(color: border),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-            textStyle: const TextStyle(fontFamily: 'Microsoft YaHei', fontSize: 13),
-          ),
-        ),
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          ),
-        ),
-        floatingActionButtonTheme: FloatingActionButtonThemeData(
-          backgroundColor: primary,
-          foregroundColor: Colors.white,
-          elevation: 4,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-        snackBarTheme: SnackBarThemeData(
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          backgroundColor: textPrimary,
-        ),
-        chipTheme: ChipThemeData(
-          backgroundColor: bgSection,
-          selectedColor: indigo100,
-          labelStyle: const TextStyle(color: textPrimary, fontFamily: 'Microsoft YaHei', fontSize: 13),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-        ),
-        dialogTheme: DialogThemeData(
-          backgroundColor: bgCard,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          elevation: 8,
-          titleTextStyle: const TextStyle(fontFamily: 'Microsoft YaHei', fontSize: 17, fontWeight: FontWeight.w600, color: textPrimary),
-          contentTextStyle: const TextStyle(fontFamily: 'Microsoft YaHei', fontSize: 14, color: textPrimary),
-        ),
-        textTheme: const TextTheme(
-          bodyLarge: TextStyle(fontSize: 14, color: textPrimary, fontFamily: 'Microsoft YaHei'),
-          bodyMedium: TextStyle(fontSize: 13, color: textPrimary, fontFamily: 'Microsoft YaHei'),
-          bodySmall: TextStyle(fontSize: 12, color: textSecondary, fontFamily: 'Microsoft YaHei'),
-          titleLarge: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: textPrimary, fontFamily: 'Microsoft YaHei'),
-          titleMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: textPrimary, fontFamily: 'Microsoft YaHei'),
-          titleSmall: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: textPrimary, fontFamily: 'Microsoft YaHei'),
-          labelLarge: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: textPrimary, fontFamily: 'Microsoft YaHei'),
-          labelMedium: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: textSecondary, fontFamily: 'Microsoft YaHei'),
-          labelSmall: TextStyle(fontSize: 11, color: textTertiary, fontFamily: 'Microsoft YaHei'),
-        ),
-        navigationBarTheme: NavigationBarThemeData(
-          backgroundColor: bgCard,
-          elevation: 2,
-          indicatorColor: indigo50,
-          labelTextStyle: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.selected)) {
-              return const TextStyle(fontWeight: FontWeight.w600, color: primary, fontFamily: 'Microsoft YaHei', fontSize: 13);
-            }
-            return const TextStyle(fontWeight: FontWeight.normal, color: textSecondary, fontFamily: 'Microsoft YaHei', fontSize: 12);
-          }),
-          iconTheme: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.selected)) {
-              return const IconThemeData(color: primary, size: 22);
-            }
-            return const IconThemeData(color: textTertiary, size: 20);
-          }),
-        ),
-        navigationRailTheme: NavigationRailThemeData(
-          backgroundColor: bgCard,
-          elevation: 1,
-          selectedIconTheme: const IconThemeData(color: primary, size: 22),
-          unselectedIconTheme: const IconThemeData(color: textTertiary, size: 20),
-          selectedLabelTextStyle: const TextStyle(fontWeight: FontWeight.w600, color: primary, fontFamily: 'Microsoft YaHei', fontSize: 13),
-          unselectedLabelTextStyle: const TextStyle(fontWeight: FontWeight.normal, color: textSecondary, fontFamily: 'Microsoft YaHei', fontSize: 12),
-          indicatorColor: indigo50,
-          indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-        dividerTheme: const DividerThemeData(
-          color: border,
-          thickness: 1,
-        ),
-        progressIndicatorTheme: const ProgressIndicatorThemeData(
-          color: primary,
-        ),
-        sliderTheme: SliderThemeData(
-          activeTrackColor: primary,
-          inactiveTrackColor: bgSection,
-          thumbColor: primary,
-          overlayColor: primary.withAlpha(30),
-        ),
-        tabBarTheme: TabBarThemeData(
-          labelColor: primary,
-          unselectedLabelColor: textSecondary,
-          indicatorColor: primary,
-          indicatorSize: TabBarIndicatorSize.label,
-          labelStyle: const TextStyle(fontFamily: 'Microsoft YaHei', fontSize: 14, fontWeight: FontWeight.w600),
-          unselectedLabelStyle: const TextStyle(fontFamily: 'Microsoft YaHei', fontSize: 13),
-          dividerColor: border,
-        ),
-        dataTableTheme: DataTableThemeData(
-          headingRowColor: WidgetStateProperty.all(bgSection),
-          dataTextStyle: const TextStyle(fontFamily: 'Microsoft YaHei', fontSize: 13),
-        ),
-      );
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+        textStyle: const TextStyle(fontFamily: _font, fontSize: 13),
+      ),
+    ),
+
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      ),
+    ),
+
+    floatingActionButtonTheme: const FloatingActionButtonThemeData(
+      backgroundColor: primary,
+      foregroundColor: Colors.white,
+      elevation: 6,
+      shape: CircleBorder(),
+    ),
+
+    chipTheme: ChipThemeData(
+      backgroundColor: surface,
+      selectedColor: primary,
+      labelStyle: const TextStyle(fontSize: 12, fontFamily: _font),
+      secondaryLabelStyle: const TextStyle(
+        fontSize: 12,
+        color: Colors.white,
+        fontFamily: _font,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+      side: BorderSide.none,
+    ),
+
+    dividerTheme: const DividerThemeData(
+      color: divider,
+      thickness: 0.5,
+      space: 0,
+    ),
+
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
+    ),
+
+    dialogTheme: DialogThemeData(
+      backgroundColor: surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      elevation: 8,
+      titleTextStyle: const TextStyle(
+        fontSize: 17,
+        fontWeight: FontWeight.w600,
+        color: textMain,
+        fontFamily: _font,
+      ),
+      contentTextStyle: const TextStyle(
+        fontSize: 14,
+        color: textMain,
+        fontFamily: _font,
+      ),
+    ),
+
+    progressIndicatorTheme: const ProgressIndicatorThemeData(
+      color: primary,
+    ),
+
+    sliderTheme: SliderThemeData(
+      activeTrackColor: primary,
+      inactiveTrackColor: bgSection,
+      thumbColor: primary,
+      overlayColor: primary.withAlpha(30),
+    ),
+
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: surface,
+      elevation: 8,
+      shadowColor: Colors.black.withAlpha(20),
+      indicatorColor: primaryBg,
+      labelTextStyle: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return const TextStyle(
+            fontWeight: FontWeight.w600,
+            color: primary,
+            fontSize: 13,
+            fontFamily: _font,
+          );
+        }
+        return const TextStyle(
+          fontWeight: FontWeight.normal,
+          color: textSoft,
+          fontSize: 12,
+          fontFamily: _font,
+        );
+      }),
+      iconTheme: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return const IconThemeData(color: primary, size: 22);
+        }
+        return const IconThemeData(color: textHint, size: 20);
+      }),
+    ),
+
+    navigationRailTheme: NavigationRailThemeData(
+      backgroundColor: surface,
+      elevation: 1,
+      selectedIconTheme: const IconThemeData(color: primary, size: 22),
+      unselectedIconTheme: const IconThemeData(color: textHint, size: 20),
+      selectedLabelTextStyle: const TextStyle(
+        fontWeight: FontWeight.w600,
+        color: primary,
+        fontSize: 13,
+        fontFamily: _font,
+      ),
+      unselectedLabelTextStyle: const TextStyle(
+        fontWeight: FontWeight.normal,
+        color: textSoft,
+        fontSize: 12,
+        fontFamily: _font,
+      ),
+      indicatorColor: primaryBg,
+      indicatorShape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+    ),
+
+    tabBarTheme: TabBarThemeData(
+      labelColor: primary,
+      unselectedLabelColor: textSoft,
+      indicatorColor: primary,
+      indicatorSize: TabBarIndicatorSize.label,
+      labelStyle: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        fontFamily: _font,
+      ),
+      unselectedLabelStyle: const TextStyle(
+        fontSize: 13,
+        fontFamily: _font,
+      ),
+      dividerColor: divider,
+    ),
+
+    dataTableTheme: DataTableThemeData(
+      headingRowColor: WidgetStateProperty.all(bgSection),
+      dataTextStyle: const TextStyle(
+        fontSize: 13,
+        fontFamily: _font,
+      ),
+    ),
+
+    textTheme: const TextTheme(
+      bodyLarge: TextStyle(fontSize: 14, color: textMain),
+      bodyMedium: TextStyle(fontSize: 13, color: textMain),
+      bodySmall: TextStyle(fontSize: 12, color: textSoft),
+      titleLarge: TextStyle(
+        fontSize: 20,
+        fontWeight: FontWeight.w600,
+        color: textMain,
+      ),
+      titleMedium: TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+        color: textMain,
+      ),
+      titleSmall: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: textMain,
+      ),
+      labelLarge: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        color: textMain,
+      ),
+      labelMedium: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        color: textSoft,
+      ),
+      labelSmall: TextStyle(fontSize: 11, color: textHint),
+    ),
+  );
 }

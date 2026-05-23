@@ -16,7 +16,7 @@ class ImageManagePage extends StatefulWidget {
 }
 
 class _ImageManagePageState extends State<ImageManagePage> {
-  String _currentPrefix = "";
+  String _currentPrefix = "kb/";
   List<Map<String, dynamic>> _dirs = [];
   List<Map<String, dynamic>> _files = [];
   bool _loading = true;
@@ -80,7 +80,7 @@ class _ImageManagePageState extends State<ImageManagePage> {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => _UploadDialog(
-        currentPrefix: _currentPrefix.isEmpty ? "images" : _currentPrefix,
+        currentPrefix: _currentPrefix.isEmpty ? "kb" : _currentPrefix,
       ),
     );
     if (result == true) _loadImages();

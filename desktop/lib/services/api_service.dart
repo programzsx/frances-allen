@@ -360,7 +360,7 @@ class ApiService {
 
   // ============ 图片（OSS）===========
 
-  static Future<Map<String, dynamic>> listImages({String prefix = ""}) async {
+  static Future<Map<String, dynamic>> listImages({String prefix = "kb"}) async {
     try {
       final params = <String, String>{};
       if (prefix.isNotEmpty) params['prefix'] = prefix;
@@ -377,7 +377,7 @@ class ApiService {
   static Future<Map<String, dynamic>> uploadImageBytes(
     String filePath,
     List<int> bytes, {
-    String prefix = "images",
+    String prefix = "kb",
     String? fileName,
     Function(double)? onProgress,
   }) async {
@@ -401,7 +401,7 @@ class ApiService {
 
   static Future<Map<String, dynamic>> uploadImage(
     String filePath, {
-    String prefix = "images",
+    String prefix = "kb",
     String? fileName,
   }) async {
     try {

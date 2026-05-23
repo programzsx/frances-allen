@@ -159,6 +159,7 @@ class _TagPageState extends State<TagPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(title: const Text('标签管理')),
       body: Column(
         children: [
           // Search bar

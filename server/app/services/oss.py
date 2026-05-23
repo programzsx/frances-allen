@@ -70,7 +70,7 @@ def list_objects(prefix: str = "") -> list[dict]:
     return dirs + files
 
 
-def upload_image(file: UploadFile, prefix: str = "images", filename: str = None) -> str:
+def upload_image(file: UploadFile, prefix: str = "kb", filename: str = None) -> str:
     """上传图片到OSS指定目录"""
     bucket = _get_bucket()
     if prefix and not prefix.endswith("/"):

@@ -222,6 +222,7 @@ class _BankPageState extends State<BankPage> {
     }
 
     return Scaffold(
+      appBar: AppBar(title: const Text('题库管理')),
       body: Column(
         children: [
           // Search bar

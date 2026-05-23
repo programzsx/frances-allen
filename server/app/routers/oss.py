@@ -26,7 +26,7 @@ def list_images(prefix: str = Query("", description="目录前缀")):
 @router.post("/upload", summary="上传图片到OSS")
 async def upload_image(
     file: UploadFile = File(...),
-    prefix: str = Query("images", description="存储目录前缀"),
+    prefix: str = Query("kb", description="存储目录前缀"),
     filename: str = Query(None, description="自定义文件名（不含扩展名）"),
 ):
     """上传图片到OSS指定目录"""

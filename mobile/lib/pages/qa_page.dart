@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/data_cache.dart';
 import 'qa_detail_page.dart';
 import 'qa_form_page.dart';
+import 'bank_page.dart';
+import 'tag_page.dart';
+import 'practice_page.dart';
 import 'question_rich_text.dart';
 import '../theme/app_theme.dart';
 
@@ -21,374 +25,395 @@ class _QaPageState extends State<QaPage> {
   List<KbQa> _qas = [];
   int _total = 0;
   int _currentPage = 1;
-  bool _loading = true;
+  bool _busy = true;
   bool _loadingMore = false;
-  String? _keyword;
-  String? _bankId;
-  String? _tagId;
+
+  String? _bid; // selected bank id
+  String? _tid; // selected tag id
+  final _q = TextEditingController();
+  final _sc = ScrollController();
+
   List<KbBank> _banks = [];
   List<KbTag> _tags = [];
-  final _searchCtrl = TextEditingController();
-  final _scrollCtrl = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    _bankId = widget.initialBankId;
-    _tagId = widget.initialTagId;
-    _loadBanks();
-    _loadTags();
-    _loadQas();
-    _scrollCtrl.addListener(_onScroll);
+    _bid = widget.initialBankId;
+    _tid = widget.initialTagId;
+    _fetchMeta();
+    _fetch();
+    _sc.addListener(_more);
   }
 
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    _scrollCtrl.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
-    if (_scrollCtrl.position.pixels >= _scrollCtrl.position.maxScrollExtent - 200) {
-      if (!_loadingMore && _qas.length < _total) {
-        _loadMore();
-      }
+  void _more() {
+    if (_sc.position.pixels > _sc.position.maxScrollExtent - 150 &&
+        !_busy &&
+        !_loadingMore &&
+        _qas.length < _total) {
+      _currentPage++;
+      _fetch();
     }
   }
 
-  Future<void> _loadMore() async {
-    if (_loadingMore || _qas.length >= _total) return;
-    setState(() => _loadingMore = true);
-    try {
-      final data = await ApiService.pageQas(
-        currentPage: _currentPage + 1,
-        bankId: _bankId,
-        keyword: _keyword,
-        tagId: _tagId,
-      );
-      final newQas = (data['items'] as List).map((e) => KbQa.fromJson(e)).toList();
+  Future<void> _fetchMeta() async {
+    final cache = DataCache();
+    await cache.ensureBanks();
+    await cache.ensureTags();
+    if (mounted) {
       setState(() {
-        _qas.addAll(newQas);
-        _currentPage++;
-        _loadingMore = false;
+        _banks = cache.allBanks;
+        _tags = cache.allTags;
       });
-    } catch (e) {
-      setState(() => _loadingMore = false);
     }
   }
 
-  Future<void> _loadBanks() async {
-    try {
-      final data = await ApiService.pageBanks(pageSize: 100);
-      setState(() {
-        _banks = (data['items'] as List).map((e) => KbBank.fromJson(e)).toList();
-      });
-    } catch (_) {}
-  }
-
-  Future<void> _loadTags() async {
-    try {
-      final data = await ApiService.pageTags(pageSize: 100);
-      setState(() {
-        _tags = (data['items'] as List).map((e) => KbTag.fromJson(e)).toList();
-      });
-    } catch (_) {}
-  }
-
-  Future<void> _loadQas() async {
-    setState(() => _loading = true);
+  Future<void> _fetch() async {
+    setState(() => _busy = true);
     try {
       final data = await ApiService.pageQas(
         currentPage: _currentPage,
-        bankId: _bankId,
-        keyword: _keyword,
-        tagId: _tagId,
+        bankId: _bid,
+        keyword: _q.text.isNotEmpty ? _q.text : null,
+        tagId: _tid,
       );
-      setState(() {
-        _qas = (data['items'] as List).map((e) => KbQa.fromJson(e)).toList();
-        _total = data['total'];
-        _loading = false;
-      });
-    } catch (e) {
-      setState(() => _loading = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('加载失败: $e')),
-        );
+        setState(() {
+          _total = data['total'] as int;
+          if (_currentPage == 1) {
+            _qas = (data['items'] as List)
+                .map((e) => KbQa.fromJson(e))
+                .toList();
+          } else {
+            _qas.addAll((data['items'] as List)
+                .map((e) => KbQa.fromJson(e)));
+          }
+          _busy = false;
+        });
       }
+    } catch (_) {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
-  void _doSearch(String v) {
+  void _toggleBank(String? id) {
     setState(() {
-      _keyword = v.isEmpty ? null : v;
+      _bid = _bid == id ? null : id;
+      _tid = null;
       _currentPage = 1;
+      _qas = [];
     });
-    _loadQas();
+    _fetch();
+  }
+
+  void _toggleTag(String? id) {
+    setState(() {
+      _tid = _tid == id ? null : id;
+      _currentPage = 1;
+      _qas = [];
+    });
+    _fetch();
+  }
+
+  String _bankName(String? id) {
+    if (id == null) return '未分类';
+    return _banks.where((b) => b.id == id).firstOrNull?.name ?? '未知';
+  }
+
+  Color _accColor(double a) {
+    if (a >= 0.8) return AppTheme.success;
+    if (a >= 0.5) return AppTheme.accent;
+    return AppTheme.danger;
   }
 
   Future<void> _deleteQa(KbQa qa) async {
-    final result = await showDialog<bool>(
+    final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('确认删除'),
         content: const Text('确定删除该题目吗？'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除', style: TextStyle(color: AppTheme.red))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除',
+                style: TextStyle(color: AppTheme.danger)),
+          ),
         ],
       ),
     );
-    if (result == true) {
+    if (ok == true) {
       await ApiService.deleteQa(qa.id);
-      _loadQas();
+      _currentPage = 1;
+      _fetch();
     }
   }
 
-  String _getBankName(String? bankId) {
-    if (bankId == null) return '未分类';
-    final bank = _banks.where((b) => b.id == bankId).firstOrNull;
-    return bank?.name ?? '未知';
-  }
-
-  Color _accuracyColor(double accuracy) {
-    if (accuracy >= 0.8) return AppTheme.green;
-    if (accuracy >= 0.5) return AppTheme.orange;
-    return AppTheme.red;
-  }
-
   @override
   Widget build(BuildContext context) {
+    final selBank = _banks.where((b) => b.id == _bid).firstOrNull;
+
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('题目'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.sell_outlined, size: 22),
+            tooltip: '标签',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const TagPage()),
+            ).then((_) {
+              DataCache().invalidate();
+              _fetchMeta();
+              _currentPage = 1;
+              _fetch();
+            }),
+          ),
+          IconButton(
+            icon: const Icon(Icons.folder_outlined, size: 22),
+            tooltip: '题库',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const BankPage()),
+            ).then((_) {
+              DataCache().invalidate();
+              _fetchMeta();
+              _currentPage = 1;
+              _fetch();
+            }),
+          ),
+          IconButton(
+            icon: const Icon(Icons.school_outlined, size: 22),
+            tooltip: '练习',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PracticePage()),
+            ),
+          ),
+        ],
+      ),
       body: Column(
-          children: [
-            // Search
-            Padding(
-              padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 4.h),
-              child: TextField(
-                controller: _searchCtrl,
-                decoration: InputDecoration(
-                  hintText: '搜索题目',
-                  hintStyle: TextStyle(fontSize: 13, color: AppTheme.textTertiary, fontFamily: 'Inter'),
-                  prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                  filled: true,
-                  fillColor: AppTheme.bgCard,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10.r),
-                    borderSide: const BorderSide(color: AppTheme.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10.r),
-                    borderSide: const BorderSide(color: AppTheme.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10.r),
-                    borderSide: const BorderSide(color: AppTheme.primary, width: 2),
-                  ),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
-                ),
-                style: TextStyle(fontSize: 14, fontFamily: 'Inter'),
-                onSubmitted: _doSearch,
+        children: [
+          // Search
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+            child: TextField(
+              controller: _q,
+              style: const TextStyle(fontSize: 15),
+              decoration: InputDecoration(
+                hintText: '搜索题目…',
+                prefixIcon: const Icon(Icons.search,
+                    color: AppTheme.textHint, size: 20),
+                suffixIcon: _q.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () {
+                          _q.clear();
+                          _currentPage = 1;
+                          _fetch();
+                        },
+                      )
+                    : null,
+              ),
+              onSubmitted: (_) {
+                _currentPage = 1;
+                _fetch();
+              },
+            ),
+          ),
+
+          // Bank chip row (always visible)
+          SizedBox(
+            height: 44,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              children: _banks
+                  .map((b) =>
+                      _chip(b.name, _bid == b.id, () => _toggleBank(b.id)))
+                  .toList(),
+            ),
+          ),
+
+          // Tag chip row (only when bank selected)
+          if (selBank != null && _tags.isNotEmpty)
+            SizedBox(
+              height: 38,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                children: _tags
+                    .map((t) => _chip(t.name, _tid == t.id,
+                        () => _toggleTag(t.id),
+                        small: true))
+                    .toList(),
               ),
             ),
 
-            // Bank filter chips
-            if (_banks.isNotEmpty && widget.initialBankId == null)
-              SizedBox(
-                height: 40.h,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 4.h),
-                  children: [
-                    Padding(
-                      padding: EdgeInsets.only(right: 6.w),
-                      child: _FilterChip(label: '全部', selected: _bankId == null, onTap: () {
-                        setState(() { _bankId = null; _currentPage = 1; });
-                        _loadQas();
-                      }),
-                    ),
-                    ..._banks.map((b) => Padding(
-                      padding: EdgeInsets.only(right: 6.w),
-                      child: _FilterChip(label: b.name, selected: _bankId == b.id, onTap: () {
-                        setState(() { _bankId = b.id; _currentPage = 1; });
-                        _loadQas();
-                      }),
-                    )),
-                  ],
-                ),
-              ),
+          const Divider(height: 1),
 
-            // List
-            Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _qas.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.quiz_outlined, size: 64.sp, color: AppTheme.textTertiary),
-                              SizedBox(height: 16.h),
-                              Text('暂无题目', style: TextStyle(color: AppTheme.textTertiary, fontSize: 16.sp, fontFamily: 'Inter')),
-                              SizedBox(height: 8.h),
-                              Text('点击右下角按钮创建', style: TextStyle(color: AppTheme.textTertiary, fontSize: 13.sp)),
-                            ],
-                          ),
-                        )
-                      : ListView.builder(
-                          controller: _scrollCtrl,
-                          padding: EdgeInsets.only(top: 4.h, bottom: 80.h),
-                          itemCount: _qas.length + (_loadingMore ? 1 : 0),
-                          itemBuilder: (ctx, i) {
-                            if (i >= _qas.length) {
-                              return Padding(
-                                padding: EdgeInsets.all(16.w),
-                                child: const Center(child: CircularProgressIndicator()),
-                              );
-                            }
-                            final qa = _qas[i];
-                            final accColor = _accuracyColor(qa.accuracy);
-                            return _QaCard(
-                              qa: qa,
-                              bankName: _getBankName(qa.bankId),
-                              accColor: accColor,
-                              onTap: () async {
-                                await Navigator.push(context, MaterialPageRoute(
-                                  builder: (_) => QaDetailPage(
-                                    qa: qa,
-                                    banks: _banks,
-                                    tags: _tags,
-                                    onRefresh: _loadQas,
-                                  ),
-                                ));
-                                _loadQas();
-                              },
-                              onDelete: () => _deleteQa(qa),
-                            );
-                          },
+          // Question list
+          Expanded(
+            child: _busy && _qas.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : _qas.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.quiz_outlined,
+                                size: 56,
+                                color: AppTheme.textHint
+                                    .withValues(alpha: 0.5)),
+                            const SizedBox(height: 12),
+                            const Text('暂无题目',
+                                style: TextStyle(
+                                    color: AppTheme.textSoft,
+                                    fontSize: 15)),
+                          ],
                         ),
-            ),
-
-            ],
-        ),
+                      )
+                    : ListView.builder(
+                        controller: _sc,
+                        padding:
+                            const EdgeInsets.only(top: 2, bottom: 80),
+                        itemCount:
+                            _qas.length + (_loadingMore ? 1 : 0),
+                        itemBuilder: (_, i) {
+                          if (i >= _qas.length) {
+                            return const Padding(
+                              padding: EdgeInsets.all(20),
+                              child: Center(
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2),
+                                ),
+                              ),
+                            );
+                          }
+                          return _card(_qas[i]);
+                        },
+                      ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          await Navigator.push(context, MaterialPageRoute(builder: (_) => const QaFormPage()));
-          _loadQas();
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) => const QaFormPage()),
+          );
+          _currentPage = 1;
+          _fetch();
         },
-        child: const Icon(Icons.add_circle_outlined, color: Colors.white),
+        child: const Icon(Icons.add),
       ),
     );
   }
-}
 
-/// QA card with subtle border and left accent
-class _QaCard extends StatelessWidget {
-  final KbQa qa;
-  final String bankName;
-  final Color accColor;
-  final VoidCallback onTap;
-  final VoidCallback onDelete;
+  // ── Alan Perlis style chip ──────────────────────────
+  Widget _chip(String label, bool sel, VoidCallback fn,
+          {bool small = false}) =>
+      Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: ChoiceChip(
+          label: Text(label,
+              style: TextStyle(
+                  fontSize: small ? 11 : 12,
+                  fontWeight: FontWeight.w500,
+                  color: sel ? Colors.white : AppTheme.textSoft)),
+          selected: sel,
+          onSelected: (_) => fn(),
+          selectedColor: AppTheme.primary,
+          backgroundColor: AppTheme.bg,
+          side: BorderSide.none,
+          visualDensity: VisualDensity.compact,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(sel ? 8 : 6)),
+        ),
+      );
 
-  const _QaCard({
-    required this.qa,
-    required this.bankName,
-    required this.accColor,
-    required this.onTap,
-    required this.onDelete,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: EdgeInsets.symmetric(horizontal: 16.w, vertical: 6.h),
-      decoration: BoxDecoration(
-        color: AppTheme.bgCard,
-        borderRadius: BorderRadius.circular(12.r),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12.r),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: EdgeInsets.all(14.w),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+  // ── Question card ───────────────────────────────────
+  Widget _card(KbQa qa) {
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => QaDetailPage(
+                qa: qa,
+                banks: _banks,
+                tags: _tags,
+                onRefresh: () {
+                  _currentPage = 1;
+                  _fetch();
+                },
+              ),
+            ),
+          );
+          _currentPage = 1;
+          _fetch();
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    QuestionRichText(
+                        text: qa.question, fontSize: 14),
+                    const SizedBox(height: 8),
+                    Row(
                       children: [
-                        QuestionRichText(text: qa.question, fontSize: 14),
-                        SizedBox(height: 8.h),
-                        Row(
-                          children: [
-                            Text(bankName, style: TextStyle(fontSize: 11.sp, color: AppTheme.textTertiary)),
-                            const Spacer(),
-                            Text(
-                              '${(qa.accuracy * 100).toStringAsFixed(0)}%',
-                              style: TextStyle(color: accColor, fontWeight: FontWeight.bold, fontSize: 13.sp, fontFamily: 'Inter'),
-                            ),
-                          ],
+                        Text(_bankName(qa.bankId),
+                            style: const TextStyle(
+                                fontSize: 11,
+                                color: AppTheme.textSoft)),
+                        const Spacer(),
+                        Text(
+                          '${(qa.accuracy * 100).toStringAsFixed(0)}%',
+                          style: TextStyle(
+                            color: _accColor(qa.accuracy),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
                         ),
                       ],
                     ),
-                  ),
-                  SizedBox(
-                    width: 32.w,
-                    height: 32.w,
-                    child: IconButton(
-                      icon: const Icon(Icons.delete_outline, color: AppTheme.red, size: 18),
-                      onPressed: onDelete,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+              const SizedBox(width: 4),
+              IconButton(
+                icon: const Icon(Icons.delete_outline,
+                    color: AppTheme.danger, size: 18),
+                onPressed: () => _deleteQa(qa),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
-}
-
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _FilterChip({required this.label, required this.selected, required this.onTap});
 
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 6.h),
-        decoration: BoxDecoration(
-          color: selected ? AppTheme.indigo50 : AppTheme.bgSection,
-          borderRadius: BorderRadius.circular(20.r),
-          border: Border.all(
-            color: selected ? AppTheme.indigo100 : AppTheme.border,
-            width: 1,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12.sp,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-            color: selected ? AppTheme.primary : AppTheme.textSecondary,
-            fontFamily: 'Inter',
-          ),
-        ),
-      ),
-    );
+  void dispose() {
+    _q.dispose();
+    _sc.dispose();
+    super.dispose();
   }
 }
