@@ -1,10 +1,9 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../models/models.dart';
-import 'api_config.dart';
 
 class ApiService {
-  static String get baseUrl => ApiConfig.baseUrl;
+  static const String baseUrl = 'http://8.160.174.178:8000';
 
   // 缓存题库数据
   static List<KbBank>? _cachedBanks;
@@ -324,26 +323,6 @@ class ApiService {
     } catch (e) {
       rethrow;
     }
-  }
-
-  /// 获取指定题库的全部题目（自动翻页）
-  static Future<List<dynamic>> getAllQasForBank({
-    String? bankId,
-  }) async {
-    final allItems = <dynamic>[];
-    int currentPage = 1;
-    int total = 0;
-    const pageSize = 100;
-
-    do {
-      final data = await pageQas(currentPage: currentPage, pageSize: pageSize, bankId: bankId);
-      final items = data['items'] as List;
-      allItems.addAll(items);
-      total = data['total'];
-      currentPage++;
-    } while (allItems.length < total);
-
-    return allItems;
   }
 
   static Future<List<dynamic>> wrongQas({

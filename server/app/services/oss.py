@@ -14,48 +14,60 @@ def _get_bucket():
 
 
 def list_objects(prefix: str = "") -> list[dict]:
-    """列出指定前缀下的所有对象（目录和文件）"""
+    """列出指定前缀下的所有对象，用 delimiter 做目录分层"""
     bucket = _get_bucket()
+    dirs = []
+    files = []
 
     if prefix:
-        # 子目录：遍历该前缀下的所有对象
-        subdir_set = set()
-        files = []
-        for obj in oss2.ObjectIterator(bucket, prefix=prefix):
-            key = obj.key
-            # 跳过目录自身标记
-            stripped = key.rstrip("/")
-            if stripped == prefix.rstrip("/"):
-                continue
-            if key.endswith("/"):
-                subdir_set.add(stripped + "/")
-            else:
+        norm_prefix = prefix.rstrip("/") + "/"
+        # 使用 bucket.list_objects + delimiter 获取一级子目录和当前目录下的文件
+        marker = None
+        while True:
+            resp = bucket.list_objects(prefix=norm_prefix, delimiter="/", marker=marker)
+            # 子目录来自 prefix_list（字符串列表）
+            for p in (resp.prefix_list or []):
+                dirs.append({
+                    "key": p,
+                    "size": 0,
+                    "last_modified": "",
+                    "is_dir": True,
+                })
+            # 文件来自 objectList
+            for obj in (resp.object_list or []):
                 files.append({
-                    "key": key,
+                    "key": obj.key,
                     "size": obj.size,
                     "last_modified": obj.last_modified,
                     "is_dir": False,
                 })
-        dirs = [{'key': k, 'size': 0, 'last_modified': '', 'is_dir': True} for k in sorted(subdir_set)]
-        files.sort(key=lambda x: x['key'])
-        return dirs + files
-    else:
-        # 根目录：遍历所有对象，从路径中提取顶层目录
-        first_dirs = set()
-        files = []
-        for obj in oss2.ObjectIterator(bucket, prefix=None):
-            key = obj.key
-            if key.endswith("/"):
-                first_dirs.add(key.rstrip("/"))
+            if resp.is_truncated:
+                marker = resp.next_marker
             else:
-                parts = key.rstrip("/").split("/")
-                if len(parts) > 1:
-                    first_dirs.add(parts[0])
-
+                break
+    else:
+        # 根目录：遍历所有对象，提取顶层目录
+        first_dirs = set()
+        marker = None
+        while True:
+            resp = bucket.list_objects(marker=marker)
+            for obj in (resp.object_list or []):
+                key = obj.key
+                if key.endswith("/"):
+                    first_dirs.add(key.rstrip("/"))
+                else:
+                    parts = key.rstrip("/").split("/")
+                    if len(parts) > 1:
+                        first_dirs.add(parts[0])
+            if resp.is_truncated:
+                marker = resp.next_marker
+            else:
+                break
         dirs = [{'key': d + "/", 'size': 0, 'last_modified': '', 'is_dir': True} for d in sorted(first_dirs)]
-        dirs.sort(key=lambda x: x['key'])
-        files.sort(key=lambda x: x['key'])
-        return dirs + files
+
+    dirs.sort(key=lambda x: x['key'])
+    files.sort(key=lambda x: x['key'])
+    return dirs + files
 
 
 def upload_image(file: UploadFile, prefix: str = "images", filename: str = None) -> str:

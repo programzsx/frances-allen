@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
-import '../services/global_filter.dart';
-import '../theme/app_theme.dart';
+import 'qa_page.dart';
+import '../theme/desktop_theme.dart';
 
 class BankPage extends StatefulWidget {
   const BankPage({super.key});
@@ -17,7 +16,6 @@ class _BankPageState extends State<BankPage> {
   bool _loading = true;
   String? _keyword;
   final _searchCtrl = TextEditingController();
-  Map<String, int> _bankCounts = {};
 
   @override
   void initState() {
@@ -31,29 +29,14 @@ class _BankPageState extends State<BankPage> {
     super.dispose();
   }
 
-  Future<void> _loadBanks({bool force = false}) async {
-    if (!force && _flatBanks.isNotEmpty) return; // Already loaded, skip redundant fetch
+  Future<void> _loadBanks() async {
     setState(() => _loading = true);
     try {
       final allBanks = await ApiService.getBanks();
       final tree = await ApiService.getBankTree();
       _sortTree(tree);
-      final bankMap = {for (final b in allBanks) b.id: b};
-
-      // Fetch question counts for all banks
-      final counts = <String, int>{};
-      for (final bank in allBanks) {
-        try {
-          final data = await ApiService.pageQas(bankId: bank.id, pageSize: 1);
-          counts[bank.id] = data['total'] as int? ?? 0;
-        } catch (_) {
-          counts[bank.id] = 0;
-        }
-      }
-
-      _bankCounts = counts;
       setState(() {
-        _flatBanks = _flattenTree(tree, allBanks, bankMap, counts);
+        _flatBanks = _flattenTree(tree, allBanks);
         _loading = false;
       });
     } catch (e) {
@@ -76,16 +59,12 @@ class _BankPageState extends State<BankPage> {
     }
   }
 
-  List<_FlatBank> _flattenTree(
-    List<dynamic> tree,
-    List<KbBank> allBanks,
-    Map<String, KbBank> bankMap,
-    Map<String, int> counts,
-  ) {
+  List<_FlatBank> _flattenTree(List<dynamic> tree, List<KbBank> allBanks) {
     final result = <_FlatBank>[];
+    final bankMap = {for (final b in allBanks) b.id: b};
     final childIds = <String>{};
     for (final node in tree) _collectChildIds(node, childIds);
-    _traverse(tree, 0, result, childIds, bankMap, counts);
+    _traverse(tree, 0, result, childIds, bankMap);
     return result;
   }
 
@@ -106,7 +85,6 @@ class _BankPageState extends State<BankPage> {
     List<_FlatBank> result,
     Set<String> childIds,
     Map<String, KbBank> bankMap,
-    Map<String, int> counts,
   ) {
     for (int i = 0; i < nodes.length; i++) {
       final node = nodes[i] as Map<String, dynamic>;
@@ -114,16 +92,10 @@ class _BankPageState extends State<BankPage> {
       final isLast = (i == nodes.length - 1);
       final hasChildren = (node['children'] as List?)?.isNotEmpty ?? false;
       final bank = bankMap[id];
-      result.add(_FlatBank(
-        bank: bank,
-        depth: depth,
-        isLast: isLast,
-        hasChildren: hasChildren,
-        questionCount: counts[id] ?? 0,
-      ));
+      result.add(_FlatBank(bank: bank, depth: depth, isLast: isLast, hasChildren: hasChildren));
       final children = node['children'] as List<dynamic>?;
       if (children != null && children.isNotEmpty) {
-        _traverse(children, depth + 1, result, childIds, bankMap, counts);
+        _traverse(children, depth + 1, result, childIds, bankMap);
       }
     }
   }
@@ -132,6 +104,7 @@ class _BankPageState extends State<BankPage> {
     setState(() {
       _keyword = v.isEmpty ? null : v;
     });
+    _loadBanks();
   }
 
   Set<String> _getDescendantIds(dynamic node) {
@@ -209,7 +182,7 @@ class _BankPageState extends State<BankPage> {
       } else {
         await ApiService.updateBank(bank.id, data);
       }
-      _loadBanks(force: true);
+      _loadBanks();
     }
   }
 
@@ -221,14 +194,14 @@ class _BankPageState extends State<BankPage> {
         content: Text('确定删除题库「${bank.name}」吗？'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除', style: TextStyle(color: AppTheme.red))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除', style: TextStyle(color: DesktopTheme.red))),
         ],
       ),
     );
     if (result == true) {
       try {
         await ApiService.deleteBank(bank.id);
-        _loadBanks(force: true);
+        _loadBanks();
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -250,78 +223,83 @@ class _BankPageState extends State<BankPage> {
 
     return Scaffold(
       body: Column(
-          children: [
-            // Search bar
-            Padding(
-              padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 8.h),
-              child: TextField(
-                controller: _searchCtrl,
-                decoration: InputDecoration(
-                  hintText: '搜索题库',
-                  hintStyle: TextStyle(fontSize: 13, color: AppTheme.textTertiary, fontFamily: 'Inter'),
-                  prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                  filled: true,
-                  fillColor: AppTheme.bgCard,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10.r),
-                    borderSide: const BorderSide(color: AppTheme.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10.r),
-                    borderSide: const BorderSide(color: AppTheme.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10.r),
-                    borderSide: const BorderSide(color: AppTheme.primary, width: 2),
-                  ),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+        children: [
+          // Search bar
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 10, 24, 6),
+            child: TextField(
+              controller: _searchCtrl,
+              decoration: InputDecoration(
+                hintText: '搜索题库',
+                hintStyle: const TextStyle(fontSize: 13, color: DesktopTheme.textTertiary),
+                prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                filled: true,
+                fillColor: DesktopTheme.bgCard,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: const BorderSide(color: DesktopTheme.border),
                 ),
-                style: TextStyle(fontSize: 14, fontFamily: 'Inter'),
-                onSubmitted: _doSearch,
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: const BorderSide(color: DesktopTheme.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: const BorderSide(color: DesktopTheme.primary, width: 2),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               ),
+              style: const TextStyle(fontSize: 14),
+              onSubmitted: _doSearch,
             ),
-            // List
-            Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : displayedBanks.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.folder_outlined, size: 64.sp, color: AppTheme.textTertiary),
-                              SizedBox(height: 16.h),
-                              Text('暂无题库', style: TextStyle(color: AppTheme.textTertiary, fontSize: 16.sp, fontFamily: 'Inter')),
-                              SizedBox(height: 8.h),
-                              Text('点击右下角按钮创建', style: TextStyle(color: AppTheme.textTertiary, fontSize: 13.sp)),
-                            ],
-                          ),
-                        )
-                      : ListView.builder(
-                          padding: EdgeInsets.only(top: 4.h, bottom: 80.h),
-                          itemCount: displayedBanks.length,
-                          itemBuilder: (ctx, i) {
-                            final fb = displayedBanks[i];
-                            final bank = fb.bank;
-                            if (bank == null) return const SizedBox.shrink();
-                            return _BankTreeItem(
-                              bank: bank,
-                              depth: fb.depth,
-                              isLast: fb.isLast,
-                              hasChildren: fb.hasChildren,
-                              questionCount: fb.questionCount,
-                              onEdit: () => _showBankDialog(bank: bank),
-                              onTap: () {
-                                GlobalQuestionFilter.setBank(bank.id);
-                              },
-                              onDelete: () => _deleteBank(bank),
-                            );
-                          },
+          ),
+          // List
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : displayedBanks.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.folder_outlined, size: 56, color: DesktopTheme.textTertiary),
+                            const SizedBox(height: 16),
+                            const Text('暂无题库', style: TextStyle(color: DesktopTheme.textTertiary, fontSize: 15)),
+                            const SizedBox(height: 8),
+                            const Text('点击右下角按钮创建', style: TextStyle(color: DesktopTheme.textTertiary, fontSize: 13)),
+                          ],
                         ),
-            ),
-          ],
-        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.only(top: 4, bottom: 72),
+                        itemCount: displayedBanks.length,
+                        itemBuilder: (ctx, i) {
+                          final fb = displayedBanks[i];
+                          final bank = fb.bank;
+                          if (bank == null) return const SizedBox.shrink();
+                          return _BankTreeItem(
+                            bank: bank,
+                            depth: fb.depth,
+                            isLast: fb.isLast,
+                            hasChildren: fb.hasChildren,
+                            onEdit: () => _showBankDialog(bank: bank),
+                            onTap: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => QaPage(initialBankId: bank.id),
+                                ),
+                              );
+                            },
+                            onDelete: () => _deleteBank(bank),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'bank_fab',
         onPressed: () => _showBankDialog(),
         child: const Icon(Icons.add_circle_outlined, color: Colors.white),
       ),
@@ -329,13 +307,11 @@ class _BankPageState extends State<BankPage> {
   }
 }
 
-/// Bank tree item with visual guide lines
 class _BankTreeItem extends StatelessWidget {
   final KbBank bank;
   final int depth;
   final bool isLast;
   final bool hasChildren;
-  final int questionCount;
   final VoidCallback onEdit;
   final VoidCallback onTap;
   final VoidCallback onDelete;
@@ -345,7 +321,6 @@ class _BankTreeItem extends StatelessWidget {
     required this.depth,
     required this.isLast,
     required this.hasChildren,
-    required this.questionCount,
     required this.onEdit,
     required this.onTap,
     required this.onDelete,
@@ -354,72 +329,57 @@ class _BankTreeItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: EdgeInsets.only(left: 16.w, right: 16.w, top: 4.h, bottom: 4.h),
-      padding: EdgeInsets.only(left: depth * 28.w),
+      margin: EdgeInsets.only(left: 24, right: 24, top: 4, bottom: 4),
+      padding: EdgeInsets.only(left: depth * 28),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // Tree guide line
           if (depth > 0) ...[
-            SizedBox(width: 16.w),
+            const SizedBox(width: 16),
             CustomPaint(
-              size: Size(12.w, 32.h),
+              size: const Size(12, 32),
               painter: _TreeLinePainter(
                 hasVerticalAbove: !isLast,
                 hasHorizontal: true,
                 isLast: isLast,
               ),
             ),
-            SizedBox(width: 4.w),
+            const SizedBox(width: 4),
           ],
           // Icon — tap to edit
           GestureDetector(
             onTap: onEdit,
             child: Container(
-              padding: EdgeInsets.all(10.w),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: AppTheme.indigo50,
-                borderRadius: BorderRadius.circular(12.r),
+                color: DesktopTheme.indigo50,
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(Icons.edit_note, color: AppTheme.primary, size: 20.sp),
+              child: const Icon(Icons.edit_note, color: DesktopTheme.primary, size: 18),
             ),
           ),
-          SizedBox(width: 14.w),
+          const SizedBox(width: 14),
           // Name — tap to view questions
           Expanded(
             child: GestureDetector(
               onTap: onTap,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    bank.name,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15.sp,
-                      fontFamily: 'Inter',
-                      color: AppTheme.textPrimary,
-                    ),
-                  ),
-                  SizedBox(height: 2.h),
-                  Text(
-                    questionCount > 0 ? '$questionCount 题' : '暂无题目',
-                    style: TextStyle(
-                      fontSize: 11.sp,
-                      color: questionCount > 0 ? AppTheme.primary : AppTheme.textTertiary,
-                      fontFamily: 'Inter',
-                    ),
-                  ),
-                ],
+              child: Text(
+                bank.name,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  color: DesktopTheme.textPrimary,
+                ),
               ),
             ),
           ),
           // Delete button
           SizedBox(
-            width: 36.w,
-            height: 36.w,
+            width: 32,
+            height: 32,
             child: IconButton(
-              icon: const Icon(Icons.delete_outline, color: AppTheme.red),
+              icon: const Icon(Icons.delete_outline, color: DesktopTheme.red, size: 18),
               onPressed: onDelete,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
@@ -445,26 +405,22 @@ class _TreeLinePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = AppTheme.textTertiary
+      ..color = DesktopTheme.textTertiary
       ..strokeWidth = 1.5
       ..style = PaintingStyle.stroke;
 
     final cx = size.width / 2;
     final cy = size.height / 2;
 
-    // Vertical line (only if not the last child at this depth)
     if (hasVerticalAbove) {
       canvas.drawLine(Offset(cx, 0), Offset(cx, cy), paint);
       canvas.drawLine(Offset(cx, cy), Offset(cx, size.height), paint);
     } else if (!isLast) {
-      // Has more siblings below but not above — shouldn't happen in tree traversal
       canvas.drawLine(Offset(cx, 0), Offset(cx, size.height), paint);
     } else {
-      // Last child — only vertical to center
       canvas.drawLine(Offset(cx, 0), Offset(cx, cy), paint);
     }
 
-    // Horizontal branch
     if (hasHorizontal) {
       canvas.drawLine(Offset(cx, cy), Offset(size.width, cy), paint);
     }
@@ -524,30 +480,25 @@ class _BankDialogState extends State<_BankDialog> {
     return AlertDialog(
       title: Text(
         widget.title,
-        style: TextStyle(
-          fontSize: 16.sp,
-          fontWeight: FontWeight.w600,
-          fontFamily: 'Inter',
-          color: AppTheme.textPrimary,
-        ),
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
       ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           TextField(
             controller: _nameCtrl,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: '题库名称',
-              prefixIcon: const Icon(Icons.folder_outlined),
+              prefixIcon: Icon(Icons.folder_outlined),
             ),
             autofocus: true,
           ),
-          SizedBox(height: 16.h),
+          const SizedBox(height: 16),
           DropdownButtonFormField<String?>(
             value: _parentId,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: '父题库（可选）',
-              prefixIcon: const Icon(Icons.subdirectory_arrow_right),
+              prefixIcon: Icon(Icons.subdirectory_arrow_right),
             ),
             items: [
               const DropdownMenuItem<String?>(
@@ -579,9 +530,8 @@ class _FlatBank {
   final int depth;
   final bool isLast;
   final bool hasChildren;
-  final int questionCount;
 
-  _FlatBank({required this.bank, required this.depth, required this.isLast, required this.hasChildren, this.questionCount = 0});
+  _FlatBank({required this.bank, required this.depth, required this.isLast, required this.hasChildren});
 }
 
 class _BankOption {

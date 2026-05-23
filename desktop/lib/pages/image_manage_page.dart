@@ -3,12 +3,10 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/api_service.dart';
-import 'package:http/http.dart' as http;
-import '../theme/app_theme.dart';
+import '../theme/desktop_theme.dart';
 
 class ImageManagePage extends StatefulWidget {
   const ImageManagePage({super.key});
@@ -22,7 +20,7 @@ class _ImageManagePageState extends State<ImageManagePage> {
   List<Map<String, dynamic>> _dirs = [];
   List<Map<String, dynamic>> _files = [];
   bool _loading = true;
-  bool _isGridView = false;
+  bool _isGridView = true;
   final _searchCtrl = TextEditingController();
 
   @override
@@ -37,8 +35,7 @@ class _ImageManagePageState extends State<ImageManagePage> {
     super.dispose();
   }
 
-  Future<void> _loadImages({bool force = false}) async {
-    if (!force && _files.isNotEmpty && _dirs.isNotEmpty) return;
+  Future<void> _loadImages() async {
     setState(() => _loading = true);
     try {
       final data = await ApiService.listImages(prefix: _currentPrefix);
@@ -59,14 +56,15 @@ class _ImageManagePageState extends State<ImageManagePage> {
 
   void _navigateToDir(String prefix) {
     setState(() => _currentPrefix = prefix);
-    _loadImages(force: true);
+    _loadImages();
   }
 
   String _getDisplayName(String key) {
-    final relative = key.startsWith(_currentPrefix)
-        ? key.substring(_currentPrefix.length)
-        : key;
-    return relative.split('/').where((s) => s.isNotEmpty).last;
+    if (_currentPrefix.isEmpty) {
+      return key.replaceAll("/", "");
+    }
+    final relative = key.substring(_currentPrefix.length);
+    return relative.replaceAll("/", "");
   }
 
   String _getParentPrefix() {
@@ -85,7 +83,7 @@ class _ImageManagePageState extends State<ImageManagePage> {
         currentPrefix: _currentPrefix.isEmpty ? "images" : _currentPrefix,
       ),
     );
-    if (result == true) _loadImages(force: true);
+    if (result == true) _loadImages();
   }
 
   Future<void> _previewImage(int index) async {
@@ -106,7 +104,7 @@ class _ImageManagePageState extends State<ImageManagePage> {
                 TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, true),
-                  child: const Text('删除', style: TextStyle(color: AppTheme.red)),
+                  child: const Text('删除', style: TextStyle(color: DesktopTheme.red)),
                 ),
               ],
             ),
@@ -114,7 +112,7 @@ class _ImageManagePageState extends State<ImageManagePage> {
           if (result == true) {
             await ApiService.deleteImage(key);
             if (mounted) Navigator.pop(ctx);
-            _loadImages(force: true);
+            _loadImages();
           }
         },
         onCopy: (url) {
@@ -127,94 +125,94 @@ class _ImageManagePageState extends State<ImageManagePage> {
     );
   }
 
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return "$bytes B";
+    if (bytes < 1024 * 1024) return "${(bytes / 1024).toStringAsFixed(1)} KB";
+    return "${(bytes / 1024 / 1024).toStringAsFixed(1)} MB";
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 0,
-            pinned: true,
-            backgroundColor: AppTheme.bgPrimary,
-            elevation: 0,
-            leading: const SizedBox.shrink(),
-            title: Text('图片管理', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 17, fontFamily: 'Inter')),
-            centerTitle: true,
-            actions: [
-              IconButton(
-                icon: Icon(_isGridView ? Icons.view_list_outlined : Icons.grid_view_outlined, size: 20),
-                onPressed: () => setState(() => _isGridView = !_isGridView),
-              ),
-              SizedBox(width: 8.w),
-            ],
+      appBar: AppBar(
+        title: const Text('图片管理', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: Icon(_isGridView ? Icons.view_list_outlined : Icons.grid_view_outlined, size: 20),
+            onPressed: () => setState(() => _isGridView = !_isGridView),
+            tooltip: _isGridView ? '列表视图' : '网格视图',
           ),
-          SliverToBoxAdapter(
-            child: Column(
+        ],
+      ),
+      body: Column(
+        children: [
+          // Breadcrumb
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+            decoration: BoxDecoration(
+              color: DesktopTheme.bgCard,
+              border: Border(bottom: BorderSide(color: DesktopTheme.border)),
+            ),
+            child: Row(
               children: [
-                // Breadcrumb
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
-                  child: Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () => _navigateToDir(""),
-                        child: Container(
-                          padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
-                          decoration: BoxDecoration(
-                            color: AppTheme.indigo50,
-                            borderRadius: BorderRadius.circular(20.r),
-                            border: Border.all(color: AppTheme.indigo100),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.home_outlined, size: 14.sp, color: AppTheme.primary),
-                              SizedBox(width: 4.w),
-                              Text('根目录', style: TextStyle(color: AppTheme.primary, fontSize: 13.sp, fontWeight: FontWeight.w500, fontFamily: 'Inter')),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (_currentPrefix.isNotEmpty) ...[
-                        SizedBox(width: 8.w),
-                        Icon(Icons.chevron_right, size: 16.sp, color: AppTheme.textTertiary),
-                        Expanded(
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: _currentPrefix.split("/").where((s) => s.isNotEmpty).toList().asMap().entries.map((entry) {
-                                final idx = entry.key;
-                                final s = entry.value;
-                                final parts = _currentPrefix.split("/").where((p) => p.isNotEmpty).toList();
-                                return Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    GestureDetector(
-                                      onTap: () {
-                                        final subParts = parts.sublist(0, idx + 1);
-                                        final newPrefix = subParts.isEmpty ? "" : "${subParts.join("/")}/";
-                                        _navigateToDir(newPrefix);
-                                      },
-                                      child: Container(
-                                        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
-                                        child: Text(s, style: TextStyle(color: AppTheme.primary, fontSize: 13.sp, fontFamily: 'Inter')),
-                                      ),
-                                    ),
-                                    Icon(Icons.chevron_right, size: 14.sp, color: AppTheme.textTertiary),
-                                  ],
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                        ),
+                GestureDetector(
+                  onTap: () => _navigateToDir(""),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: DesktopTheme.indigo50,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: DesktopTheme.indigo100),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.home_outlined, size: 14, color: DesktopTheme.primary),
+                        const SizedBox(width: 4),
+                        const Text('根目录', style: TextStyle(color: DesktopTheme.primary, fontSize: 13, fontWeight: FontWeight.w500)),
                       ],
-                    ],
+                    ),
                   ),
                 ),
+                if (_currentPrefix.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  const Icon(Icons.chevron_right, size: 16, color: DesktopTheme.textTertiary),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: _currentPrefix.split("/").where((s) => s.isNotEmpty).map((s) {
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              GestureDetector(
+                                onTap: () {
+                                  final idx = _currentPrefix.split("/").indexOf(s);
+                                  final parts = _currentPrefix.split("/").where((p) => p.isNotEmpty).toList();
+                                  parts.removeRange(idx + 1, parts.length);
+                                  final newPrefix = parts.isEmpty ? "" : "${parts.join("/")}/";
+                                  _navigateToDir(newPrefix);
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  child: Text(s, style: const TextStyle(color: DesktopTheme.primary, fontSize: 13)),
+                                ),
+                              ),
+                              const Icon(Icons.chevron_right, size: 14, color: DesktopTheme.textTertiary),
+                            ],
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
-          SliverFillRemaining(
+
+          // Content
+          Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _dirs.isEmpty && _files.isEmpty
@@ -222,11 +220,11 @@ class _ImageManagePageState extends State<ImageManagePage> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.folder_open_outlined, size: 64.sp, color: AppTheme.textTertiary),
-                            SizedBox(height: 16.h),
-                            Text('目录为空', style: TextStyle(color: AppTheme.textSecondary, fontSize: 16.sp, fontFamily: 'Inter')),
-                            SizedBox(height: 8.h),
-                            Text('点击右下角按钮上传图片', style: TextStyle(color: AppTheme.textTertiary, fontSize: 13.sp, fontFamily: 'Inter')),
+                            const Icon(Icons.folder_open_outlined, size: 56, color: DesktopTheme.textTertiary),
+                            const SizedBox(height: 16),
+                            const Text('目录为空', style: TextStyle(color: DesktopTheme.textSecondary, fontSize: 15)),
+                            const SizedBox(height: 8),
+                            const Text('点击右下角按钮上传图片', style: TextStyle(color: DesktopTheme.textTertiary, fontSize: 13)),
                           ],
                         ),
                       )
@@ -237,6 +235,7 @@ class _ImageManagePageState extends State<ImageManagePage> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'image_fab',
         onPressed: _showUploadDialog,
         child: const Icon(Icons.add_photo_alternate_outlined, color: Colors.white),
       ),
@@ -245,19 +244,19 @@ class _ImageManagePageState extends State<ImageManagePage> {
 
   Widget _buildListView() {
     return ListView(
-      padding: EdgeInsets.only(bottom: 80.h),
+      padding: const EdgeInsets.only(bottom: 72),
       children: [
         ..._dirs.map((dir) => ListTile(
               leading: Container(
-                padding: EdgeInsets.all(8.w),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: AppTheme.indigo50,
-                  borderRadius: BorderRadius.circular(10.r),
-                  border: Border.all(color: AppTheme.indigo100),
+                  color: DesktopTheme.indigo50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: DesktopTheme.indigo100),
                 ),
-                child: Icon(Icons.folder_outlined, color: AppTheme.primary),
+                child: const Icon(Icons.folder_outlined, color: DesktopTheme.primary),
               ),
-              title: Text(_getDisplayName(dir['key']), style: const TextStyle(fontFamily: 'Inter')),
+              title: Text(_getDisplayName(dir['key'])),
               trailing: const Icon(Icons.chevron_right, size: 18),
               onTap: () => _navigateToDir(dir['key']),
             )),
@@ -266,15 +265,15 @@ class _ImageManagePageState extends State<ImageManagePage> {
           final file = entry.value;
           return ListTile(
             leading: Container(
-              padding: EdgeInsets.all(8.w),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: AppTheme.orange.withAlpha(26),
-                borderRadius: BorderRadius.circular(10.r),
+                color: DesktopTheme.orange.withAlpha(26),
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.image_outlined, color: AppTheme.orange),
+              child: const Icon(Icons.image_outlined, color: DesktopTheme.orange),
             ),
-            title: Text(_getDisplayName(file['key']), style: const TextStyle(fontFamily: 'Inter')),
-            subtitle: Text(_formatFileSize(file['size']), style: const TextStyle(fontFamily: 'Inter')),
+            title: Text(_getDisplayName(file['key'])),
+            subtitle: Text(_formatFileSize(file['size'])),
             onTap: () => _previewImage(index),
           );
         }),
@@ -284,11 +283,12 @@ class _ImageManagePageState extends State<ImageManagePage> {
 
   Widget _buildGridView() {
     return GridView.builder(
-      padding: EdgeInsets.all(12.w),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 8.w,
-        mainAxisSpacing: 8.h,
+      padding: const EdgeInsets.all(16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 1.2,
       ),
       itemCount: _dirs.length + _files.length,
       itemBuilder: (ctx, i) {
@@ -298,18 +298,18 @@ class _ImageManagePageState extends State<ImageManagePage> {
             onTap: () => _navigateToDir(dir['key']),
             child: Container(
               decoration: BoxDecoration(
-                color: AppTheme.indigo50,
-                borderRadius: BorderRadius.circular(12.r),
-                border: Border.all(color: AppTheme.indigo100),
+                color: DesktopTheme.indigo50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: DesktopTheme.indigo100),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.folder_outlined, color: AppTheme.primary, size: 40.sp),
-                  SizedBox(height: 4.h),
+                  const Icon(Icons.folder_outlined, color: DesktopTheme.primary, size: 40),
+                  const SizedBox(height: 4),
                   Text(
                     _getDisplayName(dir['key']),
-                    style: TextStyle(fontSize: 11.sp, color: AppTheme.primary, fontFamily: 'Inter'),
+                    style: const TextStyle(fontSize: 12, color: DesktopTheme.primary),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -324,23 +324,23 @@ class _ImageManagePageState extends State<ImageManagePage> {
           onTap: () => _previewImage(i - _dirs.length),
           child: Container(
             decoration: BoxDecoration(
-              color: AppTheme.bgSection,
-              borderRadius: BorderRadius.circular(12.r),
-              border: Border.all(color: AppTheme.border),
+              color: DesktopTheme.bgSection,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: DesktopTheme.border),
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(12.r),
+              borderRadius: BorderRadius.circular(8),
               child: CachedNetworkImage(
                 imageUrl: url,
                 fit: BoxFit.cover,
                 errorWidget: (_, __, ___) => Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.broken_image, color: AppTheme.textTertiary, size: 32.sp),
-                    SizedBox(height: 4.h),
+                    const Icon(Icons.broken_image, color: DesktopTheme.textTertiary, size: 32),
+                    const SizedBox(height: 4),
                     Text(
                       _getDisplayName(file['key']),
-                      style: TextStyle(fontSize: 10.sp, color: AppTheme.textSecondary, fontFamily: 'Inter'),
+                      style: const TextStyle(fontSize: 11, color: DesktopTheme.textSecondary),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -352,12 +352,6 @@ class _ImageManagePageState extends State<ImageManagePage> {
         );
       },
     );
-  }
-
-  String _formatFileSize(int bytes) {
-    if (bytes < 1024) return "$bytes B";
-    if (bytes < 1024 * 1024) return "${(bytes / 1024).toStringAsFixed(1)} KB";
-    return "${(bytes / 1024 / 1024).toStringAsFixed(1)} MB";
   }
 }
 
@@ -461,16 +455,16 @@ class _UploadDialogState extends State<_UploadDialog> {
   Widget build(BuildContext context) {
     final hasFile = _selectedFile != null;
     return Scaffold(
-      backgroundColor: AppTheme.bgCard,
+      backgroundColor: DesktopTheme.bgCard,
       appBar: AppBar(
-        title: Text('上传图片', style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+        title: const Text('上传图片', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
         leading: IconButton(
           icon: const Icon(Icons.close_rounded),
           onPressed: _uploading ? null : () => Navigator.pop(context),
         ),
       ),
       body: SingleChildScrollView(
-        padding: EdgeInsets.all(16.w),
+        padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -478,11 +472,11 @@ class _UploadDialogState extends State<_UploadDialog> {
             GestureDetector(
               onTap: _uploading ? null : _pickFile,
               child: Container(
-                height: 200.h,
+                height: 200,
                 decoration: BoxDecoration(
-                  color: AppTheme.bgSection,
-                  borderRadius: BorderRadius.circular(14.r),
-                  border: Border.all(color: AppTheme.border),
+                  color: DesktopTheme.bgSection,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: DesktopTheme.border),
                 ),
                 child: _uploading
                     ? const Center(
@@ -491,7 +485,7 @@ class _UploadDialogState extends State<_UploadDialog> {
                           children: [
                             CircularProgressIndicator(strokeWidth: 2),
                             SizedBox(height: 16),
-                            Text('上传中...', style: TextStyle(fontSize: 16, color: AppTheme.textSecondary, fontFamily: 'Inter')),
+                            Text('上传中...', style: TextStyle(fontSize: 14, color: DesktopTheme.textSecondary)),
                           ],
                         ),
                       )
@@ -500,28 +494,28 @@ class _UploadDialogState extends State<_UploadDialog> {
                             fit: StackFit.expand,
                             children: [
                               ClipRRect(
-                                borderRadius: BorderRadius.circular(14.r),
+                                borderRadius: BorderRadius.circular(8),
                                 child: kIsWeb
                                     ? Image.network(_selectedFile!.path, fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 48))
                                     : Image.file(File(_selectedFile!.path), fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 48)),
                               ),
                               Positioned(
-                                bottom: 8.h,
-                                right: 8.w,
+                                bottom: 8,
+                                right: 8,
                                 child: GestureDetector(
                                   onTap: _pickFile,
                                   child: Container(
-                                    padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                                     decoration: BoxDecoration(
                                       color: Colors.black54,
-                                      borderRadius: BorderRadius.circular(20.r),
+                                      borderRadius: BorderRadius.circular(16),
                                     ),
-                                    child: Row(
+                                    child: const Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        const Icon(Icons.refresh_rounded, color: Colors.white, size: 14),
-                                        SizedBox(width: 4.w),
-                                        Text('重新选择', style: TextStyle(color: Colors.white, fontSize: 11.sp, fontFamily: 'Inter')),
+                                        Icon(Icons.refresh_rounded, color: Colors.white, size: 14),
+                                        SizedBox(width: 4),
+                                        Text('重新选择', style: TextStyle(color: Colors.white, fontSize: 11)),
                                       ],
                                     ),
                                   ),
@@ -529,21 +523,21 @@ class _UploadDialogState extends State<_UploadDialog> {
                               ),
                             ],
                           )
-                        : Center(
+                        : const Center(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.cloud_upload_outlined, size: 64.sp, color: AppTheme.textTertiary),
-                                SizedBox(height: 12.h),
-                                Text('点击此处选择图片', style: TextStyle(color: AppTheme.textSecondary, fontSize: 14.sp, fontFamily: 'Inter')),
-                                SizedBox(height: 4.h),
-                                Text('支持 JPG、PNG 等常见格式', style: TextStyle(color: AppTheme.textTertiary, fontSize: 12.sp, fontFamily: 'Inter')),
+                                Icon(Icons.cloud_upload_outlined, size: 48, color: DesktopTheme.textTertiary),
+                                SizedBox(height: 12),
+                                Text('点击此处选择图片', style: TextStyle(color: DesktopTheme.textSecondary, fontSize: 14)),
+                                SizedBox(height: 4),
+                                Text('支持 JPG、PNG 等常见格式', style: TextStyle(color: DesktopTheme.textTertiary, fontSize: 12)),
                               ],
                             ),
                           ),
               ),
             ),
-            SizedBox(height: 20.h),
+            const SizedBox(height: 20),
             // Filename
             if (hasFile) ...[
               Row(
@@ -552,14 +546,14 @@ class _UploadDialogState extends State<_UploadDialog> {
                     child: TextField(
                       enabled: !_uploading,
                       controller: _nameCtrl,
-                      decoration: InputDecoration(
+                      decoration: const InputDecoration(
                         labelText: '文件名（不含扩展名）',
-                        prefixIcon: const Icon(Icons.edit_note_outlined),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10.r)),
+                        prefixIcon: Icon(Icons.edit_note_outlined),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(6))),
                       ),
                     ),
                   ),
-                  SizedBox(width: 8.w),
+                  const SizedBox(width: 8),
                   IconButton(
                     onPressed: _uploading
                         ? null
@@ -567,41 +561,41 @@ class _UploadDialogState extends State<_UploadDialog> {
                             _selectedFile = null;
                             _nameCtrl.clear();
                           }),
-                    icon: const Icon(Icons.delete_outline, color: AppTheme.red),
+                    icon: const Icon(Icons.delete_outline, color: DesktopTheme.red),
                     tooltip: '取消选择',
                   ),
                 ],
               ),
-              SizedBox(height: 16.h),
+              const SizedBox(height: 16),
             ],
             // Storage directory
             TextField(
               enabled: !_uploading,
               controller: TextEditingController(text: _prefix),
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: '存储目录',
                 hintText: '如: images/qa',
-                prefixIcon: const Icon(Icons.folder_outlined),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10.r)),
+                prefixIcon: Icon(Icons.folder_outlined),
+                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(6))),
               ),
               onChanged: (v) => _prefix = v,
             ),
-            SizedBox(height: 20.h),
+            const SizedBox(height: 20),
             // Upload button
             SizedBox(
               width: double.infinity,
-              height: 48.h,
+              height: 44,
               child: ElevatedButton.icon(
                 onPressed: (_selectedFile == null || _nameCtrl.text.isEmpty || _uploading)
                     ? null
                     : _doUpload,
                 icon: _uploading
-                    ? SizedBox(width: 18.w, height: 18.w, child: const CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                     : const Icon(Icons.cloud_upload_outlined),
                 label: Text(_uploading ? '上传中...' : '上传'),
               ),
             ),
-            SizedBox(height: 16.h),
+            const SizedBox(height: 16),
           ],
         ),
       ),
@@ -685,7 +679,7 @@ class _ImageViewerDialogState extends State<_ImageViewerDialog> {
                   Expanded(
                     child: Text(
                       '${_currentIndex + 1} / ${widget.files.length}',
-                      style: const TextStyle(color: Colors.white, fontSize: 16, fontFamily: 'Inter'),
+                      style: const TextStyle(color: Colors.white, fontSize: 16),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -694,7 +688,7 @@ class _ImageViewerDialogState extends State<_ImageViewerDialog> {
                     onPressed: () => widget.onCopy(_getUrl(widget.files[_currentIndex]['key'])),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.delete_outline, color: AppTheme.red, size: 20),
+                    icon: const Icon(Icons.delete_outline, color: DesktopTheme.red, size: 20),
                     onPressed: () => widget.onDelete(widget.files[_currentIndex]['key']),
                   ),
                 ],
@@ -706,11 +700,11 @@ class _ImageViewerDialogState extends State<_ImageViewerDialog> {
             left: 0,
             right: 0,
             child: Container(
-              padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 16.h),
+              padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 16),
               color: Colors.black54,
               child: Text(
                 widget.files[_currentIndex]['key'].split("/").last,
-                style: const TextStyle(color: Colors.white, fontSize: 14, fontFamily: 'Inter'),
+                style: const TextStyle(color: Colors.white, fontSize: 14),
                 textAlign: TextAlign.center,
               ),
             ),

@@ -26,7 +26,10 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _pages[_currentIndex],
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _pages,
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) => setState(() => _currentIndex = index),
@@ -68,10 +71,10 @@ class _ExamHomePageState extends State<ExamHomePage> with SingleTickerProviderSt
     Icons.label_outlined,
   ];
 
-  final _qaPage = const _KeepAlive(child: QaPage());
-  final _practicePage = const _KeepAlive(child: PracticePage());
-  final _bankPage = const _KeepAlive(child: BankPage());
-  final _tagPage = const _KeepAlive(child: TagPage());
+  final _qaPage = QaPage();
+  final _practicePage = PracticePage();
+  final _bankPage = BankPage();
+  final _tagPage = TagPage();
 
   bool get _isDrillDown => _drillDownBankId != null || _drillDownTagId != null;
 
@@ -107,19 +110,24 @@ class _ExamHomePageState extends State<ExamHomePage> with SingleTickerProviderSt
   }
 
   Widget _buildContent() {
-    if (_isDrillDown) {
-      return QaPage(
-        initialBankId: _drillDownBankId,
-        initialTagId: _drillDownTagId,
-      );
-    }
-    switch (_switchIndex) {
-      case 0: return _qaPage;
-      case 1: return _practicePage;
-      case 2: return _bankPage;
-      case 3: return _tagPage;
-      default: return Container();
-    }
+    // IndexedStack must always be in the tree to preserve child state.
+    // When in drill-down mode, stack the QaPage on top of it instead
+    // of removing the IndexedStack entirely.
+    return Stack(
+      children: [
+        IndexedStack(
+          index: _switchIndex,
+          children: [_qaPage, _practicePage, _bankPage, _tagPage],
+        ),
+        if (_isDrillDown)
+          Positioned.fill(
+            child: QaPage(
+              initialBankId: _drillDownBankId,
+              initialTagId: _drillDownTagId,
+            ),
+          ),
+      ],
+    );
   }
 
   @override
@@ -235,22 +243,3 @@ class _ExamHomePageState extends State<ExamHomePage> with SingleTickerProviderSt
   }
 }
 
-/// 保活包装器，防止切换时页面状态丢失
-class _KeepAlive extends StatefulWidget {
-  final Widget child;
-  const _KeepAlive({required this.child});
-
-  @override
-  State<_KeepAlive> createState() => _KeepAliveState();
-}
-
-class _KeepAliveState extends State<_KeepAlive> with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    return widget.child;
-  }
-}

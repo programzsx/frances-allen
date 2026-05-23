@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
-import '../services/global_filter.dart';
-import '../theme/app_theme.dart';
+import 'qa_page.dart';
+import '../theme/desktop_theme.dart';
 
 class TagPage extends StatefulWidget {
   const TagPage({super.key});
@@ -25,8 +24,7 @@ class _TagPageState extends State<TagPage> {
     _loadData();
   }
 
-  Future<void> _loadData({bool force = false}) async {
-    if (!force && _tags.isNotEmpty) return;
+  Future<void> _loadData() async {
     setState(() => _loading = true);
     try {
       final tagData = await ApiService.pageTags(pageSize: 100);
@@ -45,7 +43,7 @@ class _TagPageState extends State<TagPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('加载标签失败: $e'),
-            backgroundColor: AppTheme.red,
+            backgroundColor: DesktopTheme.red,
             duration: const Duration(seconds: 3),
           ),
         );
@@ -80,7 +78,6 @@ class _TagPageState extends State<TagPage> {
     if (_searchText.isNotEmpty) {
       tags = tags.where((t) => t.name.toLowerCase().contains(_searchText.toLowerCase())).toList();
     }
-    // Sort by count descending
     tags.sort((a, b) {
       final countA = _tagCounts[a.id] ?? 0;
       final countB = _tagCounts[b.id] ?? 0;
@@ -100,12 +97,7 @@ class _TagPageState extends State<TagPage> {
           return AlertDialog(
             title: Text(
               tag == null ? '新增标签' : '编辑标签',
-              style: TextStyle(
-                fontSize: 16.sp,
-                fontWeight: FontWeight.w600,
-                fontFamily: 'Inter',
-                color: AppTheme.textPrimary,
-              ),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
             content: TextField(
               controller: nameCtrl,
@@ -134,7 +126,7 @@ class _TagPageState extends State<TagPage> {
       } else {
         await ApiService.updateTag(tag.id, {'name': result});
       }
-      _loadData(force: true);
+      _loadData();
     }
   }
 
@@ -146,13 +138,13 @@ class _TagPageState extends State<TagPage> {
         content: Text('确定删除标签「${tag.name}」吗？'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除', style: TextStyle(color: AppTheme.red))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除', style: TextStyle(color: DesktopTheme.red))),
         ],
       ),
     );
     if (result == true) {
       await ApiService.deleteTag(tag.id);
-      _loadData(force: true);
+      _loadData();
     }
   }
 
@@ -163,29 +155,29 @@ class _TagPageState extends State<TagPage> {
         children: [
           // Search bar
           Padding(
-            padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 8.h),
+            padding: const EdgeInsets.fromLTRB(24, 10, 24, 6),
             child: TextField(
               decoration: InputDecoration(
                 hintText: '搜索标签',
-                hintStyle: TextStyle(fontSize: 13, color: AppTheme.textTertiary, fontFamily: 'Inter'),
+                hintStyle: const TextStyle(fontSize: 13, color: DesktopTheme.textTertiary),
                 prefixIcon: const Icon(Icons.search_rounded, size: 18),
                 filled: true,
-                fillColor: AppTheme.bgCard,
+                fillColor: DesktopTheme.bgCard,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10.r),
-                  borderSide: const BorderSide(color: AppTheme.border),
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: const BorderSide(color: DesktopTheme.border),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10.r),
-                  borderSide: const BorderSide(color: AppTheme.border),
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: const BorderSide(color: DesktopTheme.border),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10.r),
-                  borderSide: const BorderSide(color: AppTheme.primary, width: 2),
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: const BorderSide(color: DesktopTheme.primary, width: 2),
                 ),
-                contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               ),
-              style: TextStyle(fontSize: 14, fontFamily: 'Inter'),
+              style: const TextStyle(fontSize: 14),
               onChanged: _onSearchChanged,
             ),
           ),
@@ -193,7 +185,7 @@ class _TagPageState extends State<TagPage> {
           // Selected filter chips
           if (_selectedTagIds.isNotEmpty)
             Container(
-              padding: EdgeInsets.symmetric(horizontal: 16.w),
+              padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -201,11 +193,7 @@ class _TagPageState extends State<TagPage> {
                     children: [
                       Text(
                         '已选 ${_selectedTagIds.length} 个标签',
-                        style: TextStyle(
-                          fontSize: 12.sp,
-                          color: AppTheme.textTertiary,
-                          fontFamily: 'Inter',
-                        ),
+                        style: const TextStyle(fontSize: 12, color: DesktopTheme.textTertiary),
                       ),
                       const Spacer(),
                       GestureDetector(
@@ -213,28 +201,27 @@ class _TagPageState extends State<TagPage> {
                         child: Text(
                           '清除',
                           style: TextStyle(
-                            fontSize: 12.sp,
-                            color: AppTheme.primary,
-                            fontFamily: 'Inter',
+                            fontSize: 12,
+                            color: DesktopTheme.primary,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
                       ),
                     ],
                   ),
-                  SizedBox(height: 8.h),
+                  const SizedBox(height: 8),
                   SizedBox(
-                    height: 32.h,
+                    height: 32,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: _selectedTagIds.length,
-                      separatorBuilder: (_, __) => SizedBox(width: 8.w),
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
                       itemBuilder: (context, index) {
                         final tagId = _selectedTagIds.elementAt(index);
                         final tag = _tags.firstWhere((t) => t.id == tagId);
                         return Chip(
-                          label: Text(tag.name, style: TextStyle(fontSize: 12.sp, fontFamily: 'Inter')),
-                          backgroundColor: AppTheme.primary.withAlpha(30),
+                          label: Text(tag.name, style: const TextStyle(fontSize: 12)),
+                          backgroundColor: DesktopTheme.primary.withAlpha(30),
                           side: BorderSide.none,
                           padding: EdgeInsets.zero,
                           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -244,7 +231,7 @@ class _TagPageState extends State<TagPage> {
                       },
                     ),
                   ),
-                  SizedBox(height: 8.h),
+                  const SizedBox(height: 8),
                   const Divider(height: 1),
                 ],
               ),
@@ -259,22 +246,22 @@ class _TagPageState extends State<TagPage> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.label_outlined, size: 64.sp, color: AppTheme.textTertiary),
-                            SizedBox(height: 16.h),
+                            const Icon(Icons.label_outlined, size: 56, color: DesktopTheme.textTertiary),
+                            const SizedBox(height: 16),
                             Text(
                               _searchText.isEmpty ? '暂无标签' : '未找到匹配的标签',
-                              style: TextStyle(color: AppTheme.textTertiary, fontSize: 16.sp, fontFamily: 'Inter'),
+                              style: const TextStyle(color: DesktopTheme.textTertiary, fontSize: 15),
                             ),
-                            SizedBox(height: 8.h),
+                            const SizedBox(height: 8),
                             Text(
                               _searchText.isEmpty ? '点击右下角按钮创建' : '尝试其他关键词',
-                              style: TextStyle(color: AppTheme.textTertiary, fontSize: 13.sp),
+                              style: const TextStyle(color: DesktopTheme.textTertiary, fontSize: 13),
                             ),
                           ],
                         ),
                       )
                     : ListView.builder(
-                        padding: EdgeInsets.symmetric(vertical: 8.h),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
                         itemCount: _filteredTags.length,
                         itemBuilder: (context, index) {
                           final tag = _filteredTags[index];
@@ -284,65 +271,69 @@ class _TagPageState extends State<TagPage> {
                           return InkWell(
                             onTap: () {
                               final tag = _filteredTags[index];
-                              GlobalQuestionFilter.setTag(tag.id);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => QaPage(initialTagId: tag.id),
+                                ),
+                              );
                             },
                             onLongPress: () => _showTagDialog(tag: tag),
                             child: Container(
-                              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
+                              margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 2),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                               decoration: BoxDecoration(
-                                color: isSelected ? AppTheme.primary.withAlpha(20) : Colors.transparent,
-                                border: Border(
-                                  bottom: BorderSide(color: AppTheme.border.withAlpha(100), width: 0.5),
+                                color: isSelected ? DesktopTheme.primary.withAlpha(20) : Colors.transparent,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isSelected ? DesktopTheme.primary.withAlpha(50) : Colors.transparent,
                                 ),
                               ),
                               child: Row(
                                 children: [
                                   Container(
-                                    width: 36.w,
-                                    height: 36.w,
+                                    width: 36,
+                                    height: 36,
                                     decoration: BoxDecoration(
-                                      color: isSelected ? AppTheme.primary : AppTheme.primary.withAlpha(50),
-                                      borderRadius: BorderRadius.circular(8.r),
+                                      color: isSelected ? DesktopTheme.primary : DesktopTheme.primary.withAlpha(50),
+                                      borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Center(
                                       child: Text(
                                         tag.name.substring(0, 1).toUpperCase(),
-                                        style: TextStyle(
+                                        style: const TextStyle(
                                           color: Colors.white,
                                           fontWeight: FontWeight.w600,
-                                          fontSize: 14.sp,
-                                          fontFamily: 'Inter',
+                                          fontSize: 14,
                                         ),
                                       ),
                                     ),
                                   ),
-                                  SizedBox(width: 12.w),
+                                  const SizedBox(width: 12),
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           tag.name,
-                                          style: TextStyle(
-                                            fontSize: 15.sp,
+                                          style: const TextStyle(
+                                            fontSize: 14,
                                             fontWeight: FontWeight.w500,
-                                            color: AppTheme.textPrimary,
-                                            fontFamily: 'Inter',
+                                            color: DesktopTheme.textPrimary,
                                           ),
                                         ),
-                                        SizedBox(height: 2.h),
+                                        const SizedBox(height: 2),
                                         Text(
                                           '$count 道题目',
-                                          style: TextStyle(
-                                            fontSize: 12.sp,
-                                            color: AppTheme.textTertiary,
-                                            fontFamily: 'Inter',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: DesktopTheme.textTertiary,
                                           ),
                                         ),
                                       ],
                                     ),
                                   ),
-                                  Icon(Icons.chevron_right, color: AppTheme.textTertiary, size: 22.sp),
+                                  const Icon(Icons.chevron_right, color: DesktopTheme.textTertiary, size: 20),
                                 ],
                               ),
                             ),
@@ -353,6 +344,7 @@ class _TagPageState extends State<TagPage> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'tag_fab',
         onPressed: () => _showTagDialog(),
         child: const Icon(Icons.add_circle_outlined, color: Colors.white),
       ),
