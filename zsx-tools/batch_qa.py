@@ -102,7 +102,7 @@ def create_qa(bank_id, question, answers, image_url=None):
     body = {
         "question": question,
         "answer": answers,
-        "bank_id": bank_id,
+        "category_id": bank_id,
     }
     if image_url:
         body["image_url"] = image_url

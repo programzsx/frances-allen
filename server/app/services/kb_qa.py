@@ -30,14 +30,14 @@ def create_qa(db: Session, bo: QaCreateBO) -> dict:
         "question": bo.question,
         "answer": bo.answer,
         "image_url": bo.image_url,
-        "bank_id": bo.bank_id,
+        "category_id": bo.category_id,
         "tag_id": bo.tag_id,
     }
-    # 校验 bank_id 存在
-    if bo.bank_id:
-        bank = bank_dao.get_by_id(db, bo.bank_id)
+    # 校验 category_id 存在
+    if bo.category_id:
+        bank = bank_dao.get_by_id(db, bo.category_id)
         if not bank:
-            raise ValueError(f"题库 {bo.bank_id} 不存在")
+            raise ValueError(f"题库 {bo.category_id} 不存在")
     # 校验 tag_id 存在
     if bo.tag_id:
         tags = tag_dao.get_by_ids(db, bo.tag_id)
@@ -53,11 +53,11 @@ def delete_qa(db: Session, qa_id: str) -> bool:
 
 
 def update_qa(db: Session, qa_id: str, bo: QaUpdateBO) -> Optional[dict]:
-    # 校验 bank_id 存在
-    if bo.bank_id is not None:
-        bank = bank_dao.get_by_id(db, bo.bank_id)
+    # 校验 category_id 存在
+    if bo.category_id is not None:
+        bank = bank_dao.get_by_id(db, bo.category_id)
         if not bank:
-            raise ValueError(f"题库 {bo.bank_id} 不存在")
+            raise ValueError(f"题库 {bo.category_id} 不存在")
     # 校验 tag_id 存在
     if bo.tag_id is not None:
         tags = tag_dao.get_by_ids(db, bo.tag_id)
@@ -98,11 +98,11 @@ def page_qa(
     db: Session,
     current_page: int = 1,
     page_size: int = 10,
-    bank_id: Optional[str] = None,
+    category_id: Optional[str] = None,
     keyword: Optional[str] = None,
     tag_id: Optional[str] = None,
 ) -> dict:
-    items, total = qa_dao.page_query(db, current_page, page_size, bank_id, keyword, tag_id)
+    items, total = qa_dao.page_query(db, current_page, page_size, category_id, keyword, tag_id)
     return {
         "items": [_qa_to_dict(item) for item in items],
         "total": total,
@@ -111,22 +111,22 @@ def page_qa(
     }
 
 
-def random_qa(db: Session, limit: int = 10, bank_id: Optional[str] = None) -> list[dict]:
-    items = qa_dao.random_query(db, limit, bank_id)
+def random_qa(db: Session, limit: int = 10, category_id: Optional[str] = None) -> list[dict]:
+    items = qa_dao.random_query(db, limit, category_id)
     return [_qa_to_dict(item) for item in items]
 
 
 def sequential_qa(
-    db: Session, limit: int = 10, bank_id: Optional[str] = None, offset_id: Optional[int] = None
+    db: Session, limit: int = 10, category_id: Optional[str] = None, offset_id: Optional[int] = None
 ) -> list[dict]:
-    items = qa_dao.sequential_query(db, limit, bank_id, offset_id)
+    items = qa_dao.sequential_query(db, limit, category_id, offset_id)
     return [_qa_to_dict(item) for item in items]
 
 
 def wrong_qa(
-    db: Session, limit: int = 10, bank_id: Optional[str] = None, min_wrong: int = 1
+    db: Session, limit: int = 10, category_id: Optional[str] = None, min_wrong: int = 1
 ) -> list[dict]:
-    items = qa_dao.wrong_query(db, limit, bank_id, min_wrong)
+    items = qa_dao.wrong_query(db, limit, category_id, min_wrong)
     return [_qa_to_dict(item) for item in items]
 
 

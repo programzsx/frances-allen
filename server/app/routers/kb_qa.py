@@ -16,30 +16,30 @@ router = APIRouter(prefix="/api/qas", tags=["题目管理"])
 @router.get("/random/list", summary="随机获取题目（练习模式）")
 def random_qa(
     limit: int = Query(10, ge=1, le=100),
-    bank_id: Optional[str] = Query(None),
+    category_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
-    return qa_service.random_qa(db, limit, bank_id)
+    return qa_service.random_qa(db, limit, category_id)
 
 
 @router.get("/sequential/list", summary="顺序获取题目（顺序练习）")
 def sequential_qa(
     limit: int = Query(10, ge=1, le=100),
-    bank_id: Optional[str] = Query(None),
+    category_id: Optional[str] = Query(None),
     offset_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
-    return qa_service.sequential_qa(db, limit, bank_id, offset_id)
+    return qa_service.sequential_qa(db, limit, category_id, offset_id)
 
 
 @router.get("/wrong/list", summary="错题列表（错题练习）")
 def wrong_qa(
     limit: int = Query(10, ge=1, le=100),
-    bank_id: Optional[str] = Query(None),
+    category_id: Optional[str] = Query(None),
     min_wrong: int = Query(1, ge=1),
     db: Session = Depends(get_db),
 ):
-    return qa_service.wrong_qa(db, limit, bank_id, min_wrong)
+    return qa_service.wrong_qa(db, limit, category_id, min_wrong)
 
 
 @router.get("/tag-counts", summary="统计每个标签关联的题目数量")
@@ -52,12 +52,12 @@ def tag_counts(db: Session = Depends(get_db)):
 def page_qa(
     current_page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
-    bank_id: Optional[str] = Query(None),
+    category_id: Optional[str] = Query(None),
     keyword: Optional[str] = Query(None),
     tag_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
-    return qa_service.page_qa(db, current_page, page_size, bank_id, keyword, tag_id)
+    return qa_service.page_qa(db, current_page, page_size, category_id, keyword, tag_id)
 
 
 @router.post("", summary="新增题目")

@@ -25,7 +25,7 @@ def add(db: Session, data: dict) -> KbQa:
         right=data.get("right", 0),
         wrong=data.get("wrong", 0),
         random_int=_next_random_int(db),
-        bank_id=data.get("bank_id"),
+        category_id=data.get("category_id"),
         tag_id=json.dumps(data["tag_id"], ensure_ascii=False) if data.get("tag_id") else None,
     )
     db.add(row)
@@ -65,10 +65,10 @@ def get_by_question(db: Session, question: str) -> Optional[KbQa]:
     return db.query(KbQa).filter(KbQa.question == question).first()
 
 
-def count(db: Session, bank_id: Optional[str] = None, keyword: Optional[str] = None) -> int:
+def count(db: Session, category_id: Optional[str] = None, keyword: Optional[str] = None) -> int:
     query = db.query(func.count(KbQa.id))
-    if bank_id:
-        query = query.filter(KbQa.bank_id == bank_id)
+    if category_id:
+        query = query.filter(KbQa.category_id == category_id)
     if keyword:
         query = query.filter(KbQa.question.like(f"%{keyword}%"))
     return query.scalar()
@@ -78,13 +78,13 @@ def page_query(
     db: Session,
     current_page: int = 1,
     page_size: int = 10,
-    bank_id: Optional[str] = None,
+    category_id: Optional[str] = None,
     keyword: Optional[str] = None,
     tag_id: Optional[str] = None,
 ) -> tuple[list[KbQa], int]:
     query = db.query(KbQa)
-    if bank_id:
-        query = query.filter(KbQa.bank_id == bank_id)
+    if category_id:
+        query = query.filter(KbQa.category_id == category_id)
     if keyword:
         query = query.filter(KbQa.question.like(f"%{keyword}%"))
     if tag_id:
@@ -99,32 +99,32 @@ def page_query(
     return items, total
 
 
-def random_query(db: Session, limit: int = 10, bank_id: Optional[str] = None) -> list[KbQa]:
+def random_query(db: Session, limit: int = 10, category_id: Optional[str] = None) -> list[KbQa]:
     query = db.query(KbQa)
-    if bank_id:
-        query = query.filter(KbQa.bank_id == bank_id)
+    if category_id:
+        query = query.filter(KbQa.category_id == category_id)
     return query.order_by(func.rand()).limit(limit).all()
 
 
 def sequential_query(
-    db: Session, limit: int = 10, bank_id: Optional[str] = None, offset_id: Optional[int] = None
+    db: Session, limit: int = 10, category_id: Optional[str] = None, offset_id: Optional[int] = None
 ) -> list[KbQa]:
     """按 random_int 顺序取题，offset_id 用于跳过已答题目"""
     query = db.query(KbQa)
-    if bank_id:
-        query = query.filter(KbQa.bank_id == bank_id)
+    if category_id:
+        query = query.filter(KbQa.category_id == category_id)
     if offset_id is not None:
         query = query.filter(KbQa.random_int > offset_id)
     return query.order_by(KbQa.random_int.asc()).limit(limit).all()
 
 
 def wrong_query(
-    db: Session, limit: int = 10, bank_id: Optional[str] = None, min_wrong: int = 1
+    db: Session, limit: int = 10, category_id: Optional[str] = None, min_wrong: int = 1
 ) -> list[KbQa]:
     """按错题筛选，min_wrong 为最小错误次数"""
     query = db.query(KbQa).filter(KbQa.wrong >= min_wrong)
-    if bank_id:
-        query = query.filter(KbQa.bank_id == bank_id)
+    if category_id:
+        query = query.filter(KbQa.category_id == category_id)
     return query.order_by(KbQa.wrong.desc()).limit(limit).all()
 
 

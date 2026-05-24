@@ -1,26 +1,10 @@
-# Frances Allen 知识问答系统设计文档
+# Frances Allen — 开发设计规范
 
-## 1、设计背景与动机
+> 数据设计 / 接口设计 / 开发规范
 
-我想开发一个跨端app，安装到我的Android手机上，随时随地进行知识问答练习。
+---
 
-大模型让知识问答更普遍，但这些知识并不进入我的大脑。我要通过考试的方式把知识练进大脑。这就是frances-allen项目的出发点。
-
-GitHub仓库：https://github.com/programzsx/frances-allen.git
-
-## 2、技术栈选型
-
-| 层级 | 技术 | 版本/说明 |
-|------|------|-----------|
-| 移动端 | Flutter | Material3（M3）官方组件 + flutter_screenutil适配 |
-| 后端 | FastAPI | Python3 + SQLAlchemy + PyMySQL |
-| 数据库 | MySQL | 阿里云RDS，外网地址`rm-bp148re5az8vk250qyo.mysql.rds.aliyuncs.com:3306` |
-| 文件存储 | 阿里云OSS | Endpoint`oss-cn-beijing.aliyuncs.com`，Bucket`zsx-r7000p` |
-| 部署 | Shell脚本 | 基于uvicorn |
-
-数据库账号：`frances_allen`，库名：`frances-allen`。
-
-## 3、数据设计理论
+## 1. 数据设计理论
 
 面向MySQL数据表设计，我认为字段有四段。这是我的四段数据设计理论。
 
@@ -31,7 +15,9 @@ GitHub仓库：https://github.com/programzsx/frances-allen.git
 
 total、right、wrong三者存在约束（right+wrong = total），统一建议在代码中做约束校验而非数据库层面。
 
-## 4、数据建模设计
+---
+
+## 2. 数据建模设计
 
 ### kb_qa表（问答对表）
 
@@ -50,8 +36,8 @@ kb代表knowledge_base（知识库），qa是question和answer（问答对）。
   - `right`：答对次数
   - `wrong`：答错次数
   - `random_int`：自增整数，用于排序和随机
-- 关联字段：`bank_id`、`tag_id`
-  - `bank_id`：字符串，所属题库ID。每个题目只能属于一个题库
+- 关联字段：`category_id`、`tag_id`
+  - `category_id`：字符串，所属知识分类ID。每个题目只能属于一个分类
   - `tag_id`：JSON数组，关联标签ID列表。一个题目可以有多个标签
 
 ### kb_bank表（题库表）
@@ -65,39 +51,9 @@ kb代表knowledge_base（知识库），qa是question和answer（问答对）。
 - 基础字段：`id`、`create_time`、`update_time`
 - 业务字段：`name`：标签名字
 
-## 5、基础功能设计
+---
 
-先数据后用户，这是我的设计顺序。已设计三张表：`kb_qa`、`kb_bank`、`kb_tag`。
-
-### 数据分层架构
-
-借鉴Java Web的设计模式来理解数据流转：
-
-- **DO（Data Object）**：面向持久化层，与数据库结构一一对应。也可叫PO、entity
-- **BO（Business Object）**：面向Service层，一个BO可以是多个DO的操作
-- **VO（View Object）**：面向展示层，把页面展示需要的数据封装
-
-### 数据库原子操作
-
-对每张表提供增删改查方法：
-
-- 增：`add`
-- 删：`delete`
-- 改：`update`
-- 查：多条件筛选、分页查询、随机查询
-  - 分页参数：`pageSize`（步长）、`total`（总数据量）、`currentPage`（当前页）
-
-## 6、业务功能概览
-
-核心功能模块：
-
-- **题目管理**：题目列表、搜索、多条件筛选、富文本编辑
-- **题库管理**：题库CRUD、层级管理（父子题库）
-- **标签管理**：标签CRUD、与题目多对多关联
-- **图片管理**：阿里云OSS文件浏览、上传、删除、签名URL
-- **练习模式**：随机模式、顺序模式、错题模式
-
-## 7、题目管理设计
+## 3. 题目管理设计
 
 ### 导航链路
 
@@ -160,7 +116,9 @@ kb代表knowledge_base（知识库），qa是question和answer（问答对）。
 
 预览对话框使用`Dialog`组件，最大高度为屏幕高度的80%，内容可滚动。
 
-## 8、题库管理设计
+---
+
+## 4. 题库管理设计
 
 ### 层级管理
 
@@ -195,11 +153,15 @@ kb代表knowledge_base（知识库），qa是question和answer（问答对）。
 - 编辑模式下排除当前节点及其子孙节点
 - 第一项为"无（根题库）"，值为`null`
 
-## 9、标签管理设计
+---
+
+## 5. 标签管理设计
 
 标签采用扁平列表管理，CRUD操作与题库类似。标签与题目多对多关联，通过`kb_qa`表的`tag_id` JSON数组存储。标签列表页、标签表单页的设计模式与题库一致。
 
-## 10、图片管理设计
+---
+
+## 6. 图片管理设计
 
 ### 概述
 
@@ -268,12 +230,6 @@ OSS配置：
   - "取消选择"按钮（删除图标）
   - "上传"按钮（未选择图片时禁用）
 
-### 目录结构约定
-
-- 图片统一上传到`/images/`目录下
-- 题目图片存储路径示例：`/images/qa/xxx.jpg`
-- 用户可在上传时指定子目录，或默认上传到`/images/`根目录
-
 ### 前端页面结构
 
 `ImageManagePage`页面包含：
@@ -295,7 +251,9 @@ OSS配置：
 - `DELETE /api/images/{key}`：删除OSS中的文件
 - `GET /api/images/{key}/signed-url`：获取文件的签名访问URL
 
-## 11、练习模式设计
+---
+
+## 7. 练习模式设计
 
 ### 三种练习模式
 
@@ -320,9 +278,9 @@ OSS配置：
 
 ### 后端API
 
-- `GET /api/qas/random/list?limit=10&bank_id=`：随机取题
-- `GET /api/qas/sequential/list?limit=10&bank_id=&offset_id=`：顺序取题，按`random_int`升序
-- `GET /api/qas/wrong/list?limit=10&bank_id=&min_wrong=1`：错题筛选，`wrong >= min_wrong`
+- `GET /api/qas/random/list?limit=10&category_id=`：随机取题
+- `GET /api/qas/sequential/list?limit=10&category_id=&offset_id=`：顺序取题，按`random_int`升序
+- `GET /api/qas/wrong/list?limit=10&category_id=&min_wrong=1`：错题筛选，`wrong >= min_wrong`
 
 ### DAO层实现
 
@@ -346,7 +304,9 @@ OSS配置：
 - 答对：显示绿色成功提示
 - 答错：显示红色错误提示，并展示正确答案
 
-## 12、富文本渲染设计
+---
+
+## 8. 富文本渲染设计
 
 ### 标记语法
 
@@ -388,35 +348,34 @@ OSS配置：
 
 使用场景：`QaPage`（题目列表卡片）、`PracticePage`（练习页面题目展示）、`QaFormPage`（预览对话框）。
 
-## 13、页面导航设计
+---
 
-### 底部导航栏
+## 9. API 概览
 
-底部导航栏采用精简设计，仅保留两个一级入口：
+| 路径 | 说明 |
+|------|------|
+| `GET /` | 健康检查 |
+| `GET/POST /api/banks` | 题库列表/创建 |
+| `PUT/DELETE /api/banks/:id` | 更新/删除题库 |
+| `GET /api/banks/tree` | 题库树 |
+| `GET/POST /api/tags` | 标签列表/创建 |
+| `PUT/DELETE /api/tags/:id` | 更新/删除标签 |
+| `POST /api/tags/batch` | 批量获取标签 |
+| `GET/POST /api/qas` | 题目列表/创建 |
+| `PUT/DELETE /api/qas/:id` | 更新/删除题目 |
+| `GET /api/qas/random/list` | 随机题目 |
+| `GET /api/qas/sequential/list` | 顺序题目 |
+| `GET /api/qas/wrong/list` | 错题列表 |
+| `GET /api/qas/tag-counts` | 标签题目统计 |
+| `GET /api/images/list` | OSS文件列表 |
+| `POST /api/images/upload` | 上传图片 |
+| `DELETE /api/images/:key` | 删除图片 |
+| `GET /api/images/:key/signed-url` | 获取签名URL |
+| `GET /api/images/:key/public-url` | 获取公开URL |
 
-| 序号 | 标签 | 图标 | 说明 |
-|------|------|------|------|
-| 0 | 考试 | quiz | 考试功能总入口，内部通过顶部切换器细分 |
-| 1 | 图片 | image | 图片管理（OSS） |
+---
 
-### 考试页面内部组织
-
-进入"考试"tab后，页面内部顶部设有横向切换栏，包含四个子标签：
-
-| 子标签 | 图标 | 对应页面 | 说明 |
-|--------|------|----------|------|
-| 题目 | edit_note | QaPage | 题目列表、搜索、筛选、编辑 |
-| 练习 | school | PracticePage | 练习模式选择与答题 |
-| 题库 | folder | BankPage | 题库管理 |
-| 标签 | label | TagPage | 标签管理 |
-
-顶部切换栏使用底部高亮线指示当前选中标签，带图标和文字，支持点击切换。子页面使用`AutomaticKeepAliveClientMixin`保活，切换不丢失状态。
-
-### 设计动机
-
-将题目、练习、题库、标签四个紧密关联的功能整合到"考试"一个tab下，避免底部导航项过多。后续新增功能可直接添加为底部tab，不需要重新组织架构。
-
-## 14、已知问题修复
+## 10. 已知问题修复
 
 ### DropdownButton断言错误（红色闪屏）
 
@@ -451,89 +410,9 @@ _banks.isEmpty
 
 **处理方法**：只要图片能正常显示，此错误可忽略。如果图片加载失败，可尝试使用Edge浏览器替代Chrome，或使用`flutter run -d edge`启动前端。
 
-## 15、部署运维指南
+---
 
-### 启动后端
-
-```bash
-# 检查端口8000是否被占用
-netstat -ano | grep ":8000" | grep LISTEN
-
-# 如果没有进程在监听，进入server目录启动
-cd server
-python run.py
-
-# 如果端口被占用，说明已有进程运行，无需重复启动
-```
-
-### 启动前端
-
-```bash
-# 终止所有Chrome进程，避免端口冲突
-taskkill //F //IM chrome.exe
-
-# 检查端口3000是否被占用
-netstat -ano | grep ":3000" | grep LISTEN
-
-# 如果有进程占用3000端口，终止它
-taskkill //F //PID <PID号>
-
-# 启动Flutter Web服务
-cd mobile
-flutter run -d web-server --web-port=3000
-
-# 验证前端已启动
-curl -s http://localhost:3000
-
-# 打开Chrome访问 http://localhost:3000
-```
-
-### 服务地址
-
-- 后端API：`http://127.0.0.1:8000`
-- 前端Web：`http://localhost:3000`
-
-### 注意事项
-
-- Flutter的`flutter run -d chrome`模式会自动尝试启动Chrome，但有时会失败
-- 使用`flutter run -d web-server`模式更稳定，手动用Chrome打开即可
-- 后端使用uvicorn，每次代码修改后需重启进程
-- 前端Flutter使用热重载，代码修改会自动生效
-
-### 一键部署
-
-```bash
-# 打包server目录为server.tar.gz，上传到服务器/home/
-# 在服务器上执行:
-chmod +x deploy.sh && ./deploy.sh
-```
-
-`deploy.sh`自动完成：停止旧进程→备份.env→解压代码→恢复配置→安装依赖→启动服务→健康检查。
-
-### API概览
-
-| 路径 | 说明 |
-|------|------|
-| `GET /` | 健康检查 |
-| `GET/POST /api/banks` | 题库列表/创建 |
-| `PUT/DELETE /api/banks/:id` | 更新/删除题库 |
-| `GET /api/banks/tree` | 题库树 |
-| `GET/POST /api/tags` | 标签列表/创建 |
-| `PUT/DELETE /api/tags/:id` | 更新/删除标签 |
-| `POST /api/tags/batch` | 批量获取标签 |
-| `GET/POST /api/qas` | 题目列表/创建 |
-| `PUT/DELETE /api/qas/:id` | 更新/删除题目 |
-| `GET /api/qas/random/list` | 随机题目 |
-| `GET /api/qas/sequential/list` | 顺序题目 |
-| `GET /api/qas/wrong/list` | 错题列表 |
-| `GET /api/qas/tag-counts` | 标签题目统计 |
-| `GET /api/images/list` | OSS文件列表 |
-| `POST /api/images/upload` | 上传图片 |
-| `DELETE /api/images/:key` | 删除图片 |
-| `GET /api/images/:key/signed-url` | 获取签名URL |
-| `GET /api/images/:key/public-url` | 获取公开URL |
-
-## 16、附录：MySQL字段类型
+## 11. 附录：MySQL字段类型
 
 MySQL的表字段类型有5类。
 

@@ -44,7 +44,7 @@ class _BankPageState extends State<BankPage> {
       final counts = <String, int>{};
       for (final bank in allBanks) {
         try {
-          final data = await ApiService.pageQas(bankId: bank.id, pageSize: 1);
+          final data = await ApiService.pageQas(categoryId: bank.id, pageSize: 1);
           counts[bank.id] = data['total'] as int? ?? 0;
         } catch (_) {
           counts[bank.id] = 0;

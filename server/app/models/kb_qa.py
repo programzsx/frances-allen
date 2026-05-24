@@ -23,5 +23,5 @@ class KbQa(Base):
     random_int = Column(Integer, nullable=False, unique=True, comment="自增整数，用于随机排序")
 
     # 关联字段
-    bank_id = Column(String(64), nullable=True, comment="所属题库ID")
+    category_id = Column(String(64), nullable=True, comment="所属题库ID")
     tag_id = Column(Text, nullable=True, comment="标签ID的JSON数组，如[\"id1\",\"id2\"]")

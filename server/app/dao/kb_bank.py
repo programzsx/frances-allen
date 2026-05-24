@@ -80,4 +80,4 @@ def get_all(db: Session) -> list[KbBank]:
 
 def has_qas(db: Session, bank_id: str) -> bool:
     from app.models.kb_qa import KbQa
-    return db.query(KbQa).filter(KbQa.bank_id == bank_id).first() is not None
+    return db.query(KbQa).filter(KbQa.category_id == bank_id).first() is not None

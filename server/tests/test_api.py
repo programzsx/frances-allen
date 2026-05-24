@@ -224,7 +224,7 @@
    224|        "question": "杨幂出生于___年，毕业于___。",
    225|        "answer": ["1986", "北京电影学院"],
    226|        "image_url": "https://zsx-r7000p.oss-cn-beijing.aliyuncs.com/test.jpg",
-   227|        "bank_id": bank1["id"],
+   227|        'category_id': bank1["id"],
    228|        "tag_id": [tag1["id"], tag2["id"]],
    229|    })
    230|    assert resp.status_code == 200
@@ -240,7 +240,7 @@
    240|    assert "right" in data, "缺少 right"
    241|    assert "wrong" in data, "缺少 wrong"
    242|    assert "random_int" in data, "缺少 random_int"
-   243|    assert "bank_id" in data, "缺少 bank_id"
+   243|    assert 'category_id' in data, "缺少 category_id"
    244|    assert "tag_id" in data, "缺少 tag_id"
    245|
    246|    # 验证字段值
@@ -251,12 +251,12 @@
    251|    assert data["right"] == 0, f"right 初始应为 0"
    252|    assert data["wrong"] == 0, f"wrong 初始应为 0"
    253|    assert data["random_int"] >= 1, f"random_int 应 >= 1"
-   254|    assert data["bank_id"] == bank1["id"], f"bank_id 值不对"
+   254|    assert data['category_id'] == bank1["id"], f"category_id 值不对"
    255|    assert set(data["tag_id"]) == {tag1["id"], tag2["id"]}, f"tag_id 值不对: {data['tag_id']}"
    256|    qa1 = data
    257|
    258|
-   259|test("创建题目 - 验证全部字段 question/answer/image_url/total/right/wrong/random_int/bank_id/tag_id", test_create_qa)
+   259|test("创建题目 - 验证全部字段 question/answer/image_url/total/right/wrong/random_int/category_id/tag_id", test_create_qa)
    260|
    261|# 创建无图无标签的简单题目
    262|qa2 = None
@@ -271,7 +271,7 @@
    271|    assert resp.status_code == 200
    272|    data = resp.json()
    273|    assert data["image_url"] is None, f"image_url 应为 None"
-   274|    assert data["bank_id"] is None, f"bank_id 应为 None"
+   274|    assert data['category_id'] is None, f"category_id 应为 None"
    275|    assert data["tag_id"] is None, f"tag_id 应为 None"
    276|    assert data["answer"] == ["2"], "answer 值不对"
    277|    qa2 = data
@@ -280,19 +280,19 @@
    280|test("创建题目 - 无图片无标签(可选字段验证)", test_create_qa_minimal)
    281|
    282|
-   283|# bank_id 不存在应报错
+   283|# category_id 不存在应报错
    284|
    285|
    286|def test_create_qa_invalid_bank():
    287|    resp = requests.post(f"{BASE}/api/qas", json={
    288|        "question": "test",
    289|        "answer": ["a"],
-   290|        "bank_id": "nonexistent_bank_id",
+   290|        'category_id': "nonexistent_bank_id",
    291|    })
    292|    assert resp.status_code == 500 or "不存在" in resp.text
    293|
    294|
-   295|test("创建题目 - 不存在的 bank_id 应报错", test_create_qa_invalid_bank)
+   295|test("创建题目 - 不存在的 category_id 应报错", test_create_qa_invalid_bank)
    296|
    297|
    298|# tag_id 不存在应报错
@@ -395,15 +395,15 @@
    395|
    396|
    397|def test_page_qa_by_bank():
-   398|    resp = requests.get(f"{BASE}/api/qas", params={"bank_id": bank1["id"]})
+   398|    resp = requests.get(f"{BASE}/api/qas", params={'category_id': bank1["id"]})
    399|    assert resp.status_code == 200
    400|    data = resp.json()
    401|    assert data["total"] >= 1
    402|    for item in data["items"]:
-   403|        assert item["bank_id"] == bank1["id"], f"bank_id 筛选不正确"
+   403|        assert item['category_id'] == bank1["id"], f"category_id 筛选不正确"
    404|
    405|
-   406|test("按题库筛选题目 - 验证 bank_id", test_page_qa_by_bank)
+   406|test("按分类筛选题目 - 验证 category_id", test_page_qa_by_bank)
    407|
    408|
    409|# 关键字搜索题目
@@ -437,14 +437,14 @@
    437|
    438|
    439|def test_random_qa_by_bank():
-   440|    resp = requests.get(f"{BASE}/api/qas/random/list", params={"limit": 5, "bank_id": bank1["id"]})
+   440|    resp = requests.get(f"{BASE}/api/qas/random/list", params={"limit": 5, 'category_id': bank1["id"]})
    441|    assert resp.status_code == 200
    442|    data = resp.json()
    443|    for item in data:
-   444|        assert item["bank_id"] == bank1["id"]
+   444|        assert item['category_id'] == bank1["id"]
    445|
    446|
-   447|test("按题库随机获取题目 - 验证 bank_id", test_random_qa_by_bank)
+   447|test("按分类随机获取题目 - 验证 category_id", test_random_qa_by_bank)
    448|
 # 顺序获取题目
 def test_sequential_qa():
