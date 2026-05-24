@@ -5,45 +5,35 @@ from sqlalchemy.orm import Session
 
 from app.dao import kb_qa as qa_dao
 from app.dao import kb_bank as bank_dao
-from app.dao import kb_tag as tag_dao
 from app.schemas.kb_qa import QaCreateBO, QaUpdateBO
 
 
 def _qa_to_dict(row) -> dict:
-    """将ORM对象转换为带反序列化字段的dict"""
     d = {c.name: getattr(row, c.name) for c in row.__table__.columns}
     if d.get("answer"):
         d["answer"] = json.loads(d["answer"])
-    if d.get("tag_id"):
-        d["tag_id"] = json.loads(d["tag_id"])
     return d
 
 
 def create_qa(db: Session, bo: QaCreateBO) -> dict:
-    # 校验题目唯一性
     if qa_dao.get_by_question(db, bo.question):
-        raise ValueError(f"题目「{bo.question.substring(0, min(20, bo.question.length))}...」已存在")
+        raise ValueError(f"题目已存在")
+    # 校验 category_id 存在
+    bank = bank_dao.get_by_id(db, bo.category_id)
+    if not bank:
+        raise ValueError(f"知识分类 {bo.category_id} 不存在")
+
     now = _now()
     data = {
         "create_time": now,
         "update_time": now,
         "question": bo.question,
         "answer": bo.answer,
-        "image_url": bo.image_url,
+        "sort_order": bo.sort_order,
+        "score": bo.score,
         "category_id": bo.category_id,
         "tag_id": bo.tag_id,
     }
-    # 校验 category_id 存在
-    if bo.category_id:
-        bank = bank_dao.get_by_id(db, bo.category_id)
-        if not bank:
-            raise ValueError(f"题库 {bo.category_id} 不存在")
-    # 校验 tag_id 存在
-    if bo.tag_id:
-        tags = tag_dao.get_by_ids(db, bo.tag_id)
-        if len(tags) != len(bo.tag_id):
-            raise ValueError("部分标签不存在")
-
     row = qa_dao.add(db, data)
     return _qa_to_dict(row)
 
@@ -53,33 +43,13 @@ def delete_qa(db: Session, qa_id: str) -> bool:
 
 
 def update_qa(db: Session, qa_id: str, bo: QaUpdateBO) -> Optional[dict]:
-    # 校验 category_id 存在
     if bo.category_id is not None:
         bank = bank_dao.get_by_id(db, bo.category_id)
         if not bank:
-            raise ValueError(f"题库 {bo.category_id} 不存在")
-    # 校验 tag_id 存在
-    if bo.tag_id is not None:
-        tags = tag_dao.get_by_ids(db, bo.tag_id)
-        if len(tags) != len(bo.tag_id):
-            raise ValueError("部分标签不存在")
+            raise ValueError(f"知识分类 {bo.category_id} 不存在")
 
     update_data = bo.model_dump(exclude_unset=True)
-
-    # 统计字段约束：强制 total = right + wrong
-    stat_fields = {"total", "right", "wrong"}
-    if any(k in update_data for k in stat_fields):
-        existing = qa_dao.get_by_id(db, qa_id)
-        if not existing:
-            return None
-        right = update_data.get("right", existing.right)
-        wrong = update_data.get("wrong", existing.wrong)
-        update_data["right"] = right
-        update_data["wrong"] = wrong
-        update_data["total"] = right + wrong
-
-    now = _now()
-    update_data["update_time"] = now
+    update_data["update_time"] = _now()
 
     row = qa_dao.update(db, qa_id, update_data)
     if not row:
@@ -101,8 +71,9 @@ def page_qa(
     category_id: Optional[str] = None,
     keyword: Optional[str] = None,
     tag_id: Optional[str] = None,
+    score: Optional[int] = None,
 ) -> dict:
-    items, total = qa_dao.page_query(db, current_page, page_size, category_id, keyword, tag_id)
+    items, total = qa_dao.page_query(db, current_page, page_size, category_id, keyword, tag_id, score)
     return {
         "items": [_qa_to_dict(item) for item in items],
         "total": total,
@@ -124,14 +95,10 @@ def sequential_qa(
 
 
 def wrong_qa(
-    db: Session, limit: int = 10, category_id: Optional[str] = None, min_wrong: int = 1
+    db: Session, limit: int = 10, category_id: Optional[str] = None, min_score: int = 0
 ) -> list[dict]:
-    items = qa_dao.wrong_query(db, limit, category_id, min_wrong)
+    items = qa_dao.wrong_query(db, limit, category_id, min_score)
     return [_qa_to_dict(item) for item in items]
-
-
-def tag_counts(db: Session) -> dict[str, int]:
-    return qa_dao.count_by_tag(db)
 
 
 def _now() -> str:

@@ -20,13 +20,11 @@ def add(db: Session, data: dict) -> KbQa:
         update_time=data["update_time"],
         question=data["question"],
         answer=json.dumps(data["answer"], ensure_ascii=False),
-        image_url=data.get("image_url"),
-        total=data.get("total", 0),
-        right=data.get("right", 0),
-        wrong=data.get("wrong", 0),
+        sort_order=data.get("sort_order", 0),
         random_int=_next_random_int(db),
-        category_id=data.get("category_id"),
-        tag_id=json.dumps(data["tag_id"], ensure_ascii=False) if data.get("tag_id") else None,
+        score=data.get("score", 0),
+        category_id=data["category_id"],
+        tag_id=data.get("tag_id"),
     )
     db.add(row)
     db.flush()
@@ -49,8 +47,6 @@ def update(db: Session, qa_id: str, data: dict) -> Optional[KbQa]:
     for key, value in data.items():
         if value is not None:
             if key == "answer" and isinstance(value, (list, dict)):
-                value = json.dumps(value, ensure_ascii=False)
-            elif key == "tag_id" and isinstance(value, (list, dict)):
                 value = json.dumps(value, ensure_ascii=False)
             setattr(row, key, value)
     db.flush()
@@ -81,6 +77,7 @@ def page_query(
     category_id: Optional[str] = None,
     keyword: Optional[str] = None,
     tag_id: Optional[str] = None,
+    score: Optional[int] = None,
 ) -> tuple[list[KbQa], int]:
     query = db.query(KbQa)
     if category_id:
@@ -88,10 +85,12 @@ def page_query(
     if keyword:
         query = query.filter(KbQa.question.like(f"%{keyword}%"))
     if tag_id:
-        query = query.filter(KbQa.tag_id.like(f'%"{tag_id}"%'))
+        query = query.filter(KbQa.tag_id == tag_id)
+    if score is not None:
+        query = query.filter(KbQa.score == score)
     total = query.count()
     items = (
-        query.order_by(KbQa.update_time.desc())
+        query.order_by(KbQa.sort_order.desc(), KbQa.update_time.desc())
         .offset((current_page - 1) * page_size)
         .limit(page_size)
         .all()
@@ -109,7 +108,6 @@ def random_query(db: Session, limit: int = 10, category_id: Optional[str] = None
 def sequential_query(
     db: Session, limit: int = 10, category_id: Optional[str] = None, offset_id: Optional[int] = None
 ) -> list[KbQa]:
-    """按 random_int 顺序取题，offset_id 用于跳过已答题目"""
     query = db.query(KbQa)
     if category_id:
         query = query.filter(KbQa.category_id == category_id)
@@ -119,25 +117,10 @@ def sequential_query(
 
 
 def wrong_query(
-    db: Session, limit: int = 10, category_id: Optional[str] = None, min_wrong: int = 1
+    db: Session, limit: int = 10, category_id: Optional[str] = None, min_score: int = -1
 ) -> list[KbQa]:
-    """按错题筛选，min_wrong 为最小错误次数"""
-    query = db.query(KbQa).filter(KbQa.wrong >= min_wrong)
+    """按掌握程度筛选，score <= min_score 的题目（不会/模糊）"""
+    query = db.query(KbQa).filter(KbQa.score <= min_score)
     if category_id:
         query = query.filter(KbQa.category_id == category_id)
-    return query.order_by(KbQa.wrong.desc()).limit(limit).all()
-
-
-def count_by_tag(db: Session) -> dict[str, int]:
-    """统计每个标签关联的题目数量"""
-    rows = db.query(KbQa.tag_id).all()
-    tag_counts: dict[str, int] = {}
-    for row in rows:
-        if row.tag_id:
-            try:
-                tag_ids = json.loads(row.tag_id)
-                for tid in tag_ids:
-                    tag_counts[tid] = tag_counts.get(tid, 0) + 1
-            except (json.JSONDecodeError, TypeError):
-                pass
-    return tag_counts
+    return query.order_by(KbQa.score.asc()).limit(limit).all()

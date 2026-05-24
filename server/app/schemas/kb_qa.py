@@ -2,28 +2,27 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-# ============ BO（业务输入）===========
+# ============ BO（业务输入）============
 
 class QaCreateBO(BaseModel):
     question: str = Field(..., description="问题题目，___表示填空")
     answer: list[str] = Field(..., description="答案列表")
-    image_url: Optional[str] = Field(None, max_length=512, description="图片OSS URL")
-    category_id: Optional[str] = Field(None, description="所属题库ID")
-    tag_id: Optional[list[str]] = Field(None, description="标签ID列表")
+    category_id: str = Field(..., description="所属知识分类ID（必填）")
+    tag_id: Optional[str] = Field(None, description="标签ID")
+    sort_order: int = Field(0, description="排序值")
+    score: int = Field(0, ge=-1, le=1, description="掌握程度 -1/0/1")
 
 
 class QaUpdateBO(BaseModel):
     question: Optional[str] = Field(None, description="问题题目")
     answer: Optional[list[str]] = Field(None, description="答案列表")
-    image_url: Optional[str] = Field(None, max_length=512, description="图片OSS URL")
-    category_id: Optional[str] = Field(None, description="所属题库ID")
-    tag_id: Optional[list[str]] = Field(None, description="标签ID列表")
-    total: Optional[int] = Field(None, ge=0, description="总答题次数")
-    right: Optional[int] = Field(None, ge=0, description="答对次数")
-    wrong: Optional[int] = Field(None, ge=0, description="答错次数")
+    category_id: Optional[str] = Field(None, description="所属知识分类ID")
+    tag_id: Optional[str] = Field(None, description="标签ID")
+    sort_order: Optional[int] = Field(None, description="排序值")
+    score: Optional[int] = Field(None, ge=-1, le=1, description="掌握程度 -1/0/1")
 
 
-# ============ VO（视图输出）===========
+# ============ VO（视图输出）============
 
 class QaVO(BaseModel):
     id: str
@@ -31,12 +30,11 @@ class QaVO(BaseModel):
     update_time: str
     question: str
     answer: list[str]
-    image_url: Optional[str] = None
-    total: int = 0
-    right: int = 0
-    wrong: int = 0
-    category_id: Optional[str] = None
-    tag_id: Optional[list[str]] = None
+    sort_order: int = 0
+    random_int: int = 0
+    score: int = 0
+    category_id: str
+    tag_id: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
