@@ -288,7 +288,7 @@ class _BankPageState extends State<BankPage> {
                               await Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => QaPage(initialBankId: bank.id),
+                                  builder: (_) => QaPage(initialCategoryId: bank.id),
                                 ),
                               );
                             },
