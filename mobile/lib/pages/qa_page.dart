@@ -36,10 +36,10 @@ class _QaPageState extends State<QaPage> {
   List<KbBank> _banks = [];
   List<KbTag> _tags = [];
 
-  // 题库树（层级下钻）
+  // 题库树（alan-perlis 横向芯片下钻模式）
   List<Map<String, dynamic>> _bankTree = [];
-  Map<String, int> _descendantCounts = {};
-  final Set<String> _expandedIds = {};
+  Map<String, Map<String, dynamic>> _bankNodeMap = {}; // id → node
+  String? _parentCid; // 当前下钻层级（null=根）
   String? _selectedBankName;
 
   @override
@@ -106,54 +106,110 @@ class _QaPageState extends State<QaPage> {
   Future<void> _loadBankTree() async {
     try {
       final tree = await ApiService.getBankTree();
-      final counts = await ApiService.getDescendantCounts();
+      final nodeMap = <String, Map<String, dynamic>>{};
+      _buildNodeMap((tree as List<dynamic>).cast<Map<String, dynamic>>(), nodeMap);
       if (mounted) {
         setState(() {
-          _bankTree = (tree as List<dynamic>).cast<Map<String, dynamic>>();
-          _descendantCounts = counts;
+          _bankTree = tree.cast<Map<String, dynamic>>();
+          _bankNodeMap = nodeMap;
         });
       }
     } catch (_) {}
   }
 
-  void _toggleBank(String id, String name) {
-    setState(() {
-      if (id.isEmpty || _bid == id) {
-        // 清空 → 取消筛选
-        _bid = null;
-        _selectedBankName = null;
-      } else {
+  void _buildNodeMap(List<Map<String, dynamic>> nodes, Map<String, Map<String, dynamic>> map) {
+    for (final node in nodes) {
+      map[node['id'] as String] = node;
+      final children = node['children'] as List<dynamic>?;
+      if (children != null) _buildNodeMap(children.cast<Map<String, dynamic>>(), map);
+    }
+  }
+
+  /// 根据 parent_id 查找父节点
+  String? _parentOf(String childId) {
+    for (final entry in _bankNodeMap.entries) {
+      final children = entry.value['children'] as List<dynamic>?;
+      if (children != null && children.any((c) => (c as Map<String, dynamic>)['id'] == childId)) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+
+  /// 当前层级应显示的芯片（根=根节点，否则=当前_parentCid的子节点）
+  List<Map<String, dynamic>> get _chipBanks {
+    if (_parentCid == null) return _bankTree;
+    final node = _bankNodeMap[_parentCid];
+    if (node == null) return [];
+    final children = node['children'] as List<dynamic>?;
+    return children?.cast<Map<String, dynamic>>() ?? [];
+  }
+
+  /// 芯片交互
+  void _onChipTap(Map<String, dynamic> bank) {
+    final id = bank['id'] as String;
+    final children = (bank['children'] as List<dynamic>?) ?? [];
+    final name = bank['name'] as String;
+
+    if (children.isNotEmpty) {
+      // 有子节点 → 下钻：更新 parentCid，同时选中当前层级
+      setState(() {
+        _parentCid = id;
         _bid = id;
         _selectedBankName = name;
         _tid = null;
-      }
+        _currentPage = 1;
+        _qas = [];
+      });
+    } else {
+      // 叶子节点 → 切换选中
+      setState(() {
+        if (_bid == id) {
+          // 取消选中 → 选中父层级
+          _bid = _parentCid;
+          _selectedBankName = _parentCid != null && _bankNodeMap.containsKey(_parentCid!)
+              ? _bankNodeMap[_parentCid!]!['name'] as String?
+              : null;
+        } else {
+          _bid = id;
+          _selectedBankName = name;
+        }
+        _tid = null;
+        _currentPage = 1;
+        _qas = [];
+      });
+    }
+    _fetch();
+  }
+
+  /// ← 全部：回到根层级
+  void _backToRoot() {
+    setState(() {
+      _parentCid = null;
+      _bid = null;
+      _selectedBankName = null;
+      _tid = null;
       _currentPage = 1;
       _qas = [];
     });
     _fetch();
   }
 
-  /// 展开/折叠树节点
-  void _toggleExpand(String id) {
+  /// 点击父节点芯片：回到上一层级
+  void _onParentTap() {
+    if (_parentCid == null) return;
+    final up = _parentOf(_parentCid!);
     setState(() {
-      if (_expandedIds.contains(id)) {
-        _expandedIds.remove(id);
-      } else {
-        _expandedIds.add(id);
-      }
+      _parentCid = up;
+      _bid = up;
+      _selectedBankName = up != null && _bankNodeMap.containsKey(up)
+          ? _bankNodeMap[up]!['name'] as String?
+          : null;
+      _tid = null;
+      _currentPage = 1;
+      _qas = [];
     });
-  }
-
-  /// 收集节点自身及所有后代ID
-  List<String> _collectDescendantIds(Map<String, dynamic> node) {
-    final ids = <String>[node['id'] as String];
-    final children = node['children'] as List<dynamic>?;
-    if (children != null) {
-      for (final child in children) {
-        ids.addAll(_collectDescendantIds(child as Map<String, dynamic>));
-      }
-    }
-    return ids;
+    _fetch();
   }
 
   void _toggleTag(String? id) {
@@ -274,97 +330,34 @@ class _QaPageState extends State<QaPage> {
             ),
           ),
 
-          // 题库树（缩进层级视图）
-          if (_bankTree.isNotEmpty)
-            Container(
-              constraints: BoxConstraints(maxHeight: 260.h),
-              decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: AppTheme.border.withAlpha(80))),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // "全部"清除筛选
-                  Material(
-                    color: _bid == null ? AppTheme.primary.withAlpha(15) : Colors.transparent,
-                    child: InkWell(
-                      onTap: () => _toggleBank('', ''),
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
-                        child: Row(children: [
-                          Icon(Icons.layers_rounded, size: 16.sp, color: _bid == null ? AppTheme.primary : AppTheme.textTertiary),
-                          SizedBox(width: 8.w),
-                          Text('全部题库',
-                            style: TextStyle(
-                              fontSize: 13.sp,
-                              fontWeight: _bid == null ? FontWeight.w600 : FontWeight.w500,
-                              color: _bid == null ? AppTheme.primary : AppTheme.textPrimary,
-                            ),
-                          ),
-                          const Spacer(),
-                          if (_bid == null)
-                            Icon(Icons.check, size: 16.sp, color: AppTheme.primary),
-                        ]),
-                      ),
-                    ),
-                  ),
-                  Divider(height: 1, color: AppTheme.border.withAlpha(60)),
-                  Expanded(
-                    child: ListView(
-                      padding: EdgeInsets.zero,
-                      children: _buildTreeRows(_bankTree, 0),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          // 题库芯片行（alan-perlis 横向下钻模式）
+          _buildChipRow(),
 
-          // 已选中题库标签
-          if (_selectedBankName != null) ...[
-            SizedBox(height: 8.h),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12.w),
-              child: Row(children: [
-                Chip(
-                  label: Text(_selectedBankName!, style: TextStyle(fontSize: 12.sp)),
-                  backgroundColor: AppTheme.indigo50,
-                  labelStyle: TextStyle(color: AppTheme.primary),
-                  deleteIcon: const Icon(Icons.close, size: 16),
-                  onDeleted: () => _toggleBank('', ''),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.r)),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                ),
-                if (_tags.isNotEmpty) ...[
-                  SizedBox(width: 8.w),
-                  Expanded(
-                    child: SizedBox(
-                      height: 36.h,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: _tags
-                            .map((t) => Padding(
-                              padding: EdgeInsets.only(right: 6.w),
-                              child: ChoiceChip(
-                                label: Text(t.name, style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.w500,
-                                    color: _tid == t.id ? Colors.white : AppTheme.textSoft)),
-                                selected: _tid == t.id,
-                                onSelected: (_) => _toggleTag(t.id),
-                                selectedColor: AppTheme.primary,
-                                backgroundColor: AppTheme.bg,
-                                side: BorderSide.none,
-                                visualDensity: VisualDensity.compact,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6.r)),
-                              ),
-                            ))
-                            .toList(),
+          // 标签行（选中题库时显示）
+          if (_selectedBankName != null && _tags.isNotEmpty)
+            SizedBox(
+              height: 38,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                children: _tags
+                    .map((t) => Padding(
+                      padding: EdgeInsets.only(right: 6.w),
+                      child: ChoiceChip(
+                        label: Text(t.name, style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.w500,
+                            color: _tid == t.id ? Colors.white : AppTheme.textSoft)),
+                        selected: _tid == t.id,
+                        onSelected: (_) => _toggleTag(t.id),
+                        selectedColor: AppTheme.primary,
+                        backgroundColor: AppTheme.bg,
+                        side: BorderSide.none,
+                        visualDensity: VisualDensity.compact,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6.r)),
                       ),
-                    ),
-                  ),
-                ],
-              ]),
+                    ))
+                    .toList(),
+              ),
             ),
-          ],
 
           const Divider(height: 1),
 
@@ -430,90 +423,76 @@ class _QaPageState extends State<QaPage> {
     );
   }
 
-  // ── 树视图构建 ───────────────────────────────────
+  // ── 芯片行（alan-perlis 横向逐层下钻） ────────────
 
-  List<Widget> _buildTreeRows(List<Map<String, dynamic>> nodes, int depth) {
-    final rows = <Widget>[];
-    for (final node in nodes) {
-      final id = node['id'] as String;
-      final name = node['name'] as String;
-      final children = (node['children'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [];
-      final hasChildren = children.isNotEmpty;
-      final count = _descendantCounts[id] ?? 0;
-      final isSelected = _bid == id;
-      final isExpanded = _expandedIds.contains(id);
+  Widget _buildChipRow() {
+    final chips = _chipBanks;
+    final isChildLevel = _parentCid != null;
+    final parentNode = isChildLevel ? _bankNodeMap[_parentCid] : null;
+    final parentName = parentNode?['name'] as String?;
 
-      rows.add(
-        Material(
-          color: isSelected ? AppTheme.primary.withAlpha(12) : Colors.transparent,
-          child: InkWell(
-            onTap: () {
-              if (hasChildren) {
-                _toggleExpand(id);
-              }
-              _toggleBank(id, name);
-            },
-            child: Padding(
-              padding: EdgeInsets.only(
-                left: 16.w + depth * 22.w,
-                right: 12.w,
-                top: 9.h,
-                bottom: 9.h,
-              ),
-              child: Row(children: [
-                // 展开/折叠图标
-                if (hasChildren)
-                  Padding(
-                    padding: EdgeInsets.only(right: 4.w),
-                    child: Icon(
-                      isExpanded ? Icons.expand_more : Icons.chevron_right,
-                      size: 18.sp,
-                      color: AppTheme.textTertiary,
-                    ),
-                  )
-                else
-                  SizedBox(width: 22.w),
-                // 名称
-                Expanded(
-                  child: Text(name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13.sp,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                      color: isSelected ? AppTheme.primary : AppTheme.textPrimary,
-                    ),
-                  ),
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
+        children: [
+          // ← 全部（子层级时显示）
+          if (isChildLevel)
+            Padding(
+              padding: EdgeInsets.only(right: 4.w),
+              child: InkWell(
+                onTap: _backToRoot,
+                borderRadius: BorderRadius.circular(8.r),
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.arrow_back_ios, size: 12.sp, color: AppTheme.textSoft),
+                    SizedBox(width: 2.w),
+                    Text('全部', style: TextStyle(fontSize: 12.sp, color: AppTheme.textSoft)),
+                  ]),
                 ),
-                // 题目数
-                if (count > 0)
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withAlpha(20),
-                      borderRadius: BorderRadius.circular(10.r),
-                    ),
-                    child: Text('$count',
-                      style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.w600, color: AppTheme.primary)),
-                  ),
-                // 选中标记
-                if (isSelected) ...[
-                  SizedBox(width: 6.w),
-                  Icon(Icons.check, size: 16.sp, color: AppTheme.primary),
-                ],
-              ]),
+              ),
             ),
-          ),
-        ),
-      );
 
-      // 展开子节点
-      if (hasChildren && isExpanded) {
-        rows.addAll(_buildTreeRows(children, depth + 1));
-      }
-    }
-    return rows;
+          // 父节点芯片（子层级时显示）
+          if (isChildLevel && parentName != null)
+            Padding(
+              padding: EdgeInsets.only(right: 6.w),
+              child: _chip(parentName, _bid == _parentCid, _onParentTap),
+            ),
+
+          // 子节点芯片
+          for (final bank in chips)
+            Padding(
+              padding: EdgeInsets.only(right: 6.w),
+              child: _chip(
+                bank['name'] as String,
+                _bid == bank['id'],
+                () => _onChipTap(bank),
+              ),
+            ),
+        ],
+      ),
+    );
   }
+
+  Widget _chip(String label, bool sel, VoidCallback fn) => ChoiceChip(
+    label: Text(label,
+      style: TextStyle(
+        fontSize: 12.sp,
+        fontWeight: FontWeight.w500,
+        color: sel ? Colors.white : AppTheme.textSoft,
+      ),
+    ),
+    selected: sel,
+    onSelected: (_) => fn(),
+    selectedColor: AppTheme.primary,
+    backgroundColor: AppTheme.bg,
+    side: BorderSide.none,
+    visualDensity: VisualDensity.compact,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(sel ? 8.r : 6.r)),
+  );
 
   // ── Question card ───────────────────────────────────
   Widget _card(KbQa qa) {
