@@ -19,7 +19,9 @@ class _PracticePageState extends State<PracticePage> {
   // Setup state
   KbBank? _selectedBank;
   PracticeMode _mode = PracticeMode.random;
-  int _minScore = 0;
+  int _minWrongCount = 1;
+  final TextEditingController _wrongCtrl = TextEditingController(text: '1');
+  String? _wrongError;
   bool _loading = false;
   int _bankTotal = 0; // 选中题库的后代总题数（0=未选/全库）
 
@@ -38,32 +40,36 @@ class _PracticePageState extends State<PracticePage> {
 
   @override
   void dispose() {
+    _wrongCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _loadBankTree() async {
+    setState(() => _treeLoading = true);
+
+    // 独立请求，一个失败不影响另一个
     try {
-      final results = await Future.wait([
-        ApiService.getBankTree(),
-        ApiService.getDescendantCounts(),
-      ]);
-      final tree = results[0] as List<dynamic>;
-      final counts = results[1] as Map<String, int>;
-
+      final tree = await ApiService.getBankTree();
       final nodeMap = <String, Map<String, dynamic>>{};
-      _buildNodeMap(tree.cast<Map<String, dynamic>>(), nodeMap);
-
+      _buildNodeMap((tree as List<dynamic>).cast<Map<String, dynamic>>(), nodeMap);
       if (mounted) {
         setState(() {
           _bankTreeRaw = tree.cast<Map<String, dynamic>>();
           _bankNodeMap = nodeMap;
-          _descendantCounts = counts;
-          _treeLoading = false;
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _treeLoading = false);
+      // 树加载失败，保持空列表
     }
+
+    try {
+      final counts = await ApiService.getDescendantCounts();
+      if (mounted) setState(() => _descendantCounts = counts);
+    } catch (_) {
+      // 计数加载失败不影响主流程
+    }
+
+    if (mounted) setState(() => _treeLoading = false);
   }
 
   void _buildNodeMap(List<Map<String, dynamic>> nodes, Map<String, Map<String, dynamic>> map) {
@@ -174,8 +180,8 @@ class _PracticePageState extends State<PracticePage> {
           // 保持原顺序
           break;
         case PracticeMode.wrong:
-          // 错题模式：从已获取的题目中按 wrong 次数筛选
-          qas = qas.where((q) => q.wrong > _minScore).toList();
+          // 错题模式：筛选错误次数 >= _minWrongCount 的题目
+          qas = qas.where((q) => q.wrong >= _minWrongCount).toList();
           break;
       }
 
@@ -255,7 +261,7 @@ class _PracticePageState extends State<PracticePage> {
                   width: double.infinity,
                   height: 52.h,
                   child: ElevatedButton.icon(
-                    onPressed: _loading ? null : _startPractice,
+                    onPressed: (_loading || (_mode == PracticeMode.wrong && _wrongError != null)) ? null : _startPractice,
                     icon: _loading
                         ? SizedBox(width: 20.w, height: 20.w, child: const CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                         : const Icon(Icons.play_arrow, color: Colors.white),
@@ -294,6 +300,7 @@ class _PracticePageState extends State<PracticePage> {
 
     final currentBanks = _currentBanks;
     final hasSelected = _selectedBank != null;
+    final isRoot = _drillPath.isEmpty;
 
     return Container(
       padding: EdgeInsets.all(14.w),
@@ -307,25 +314,31 @@ class _PracticePageState extends State<PracticePage> {
         children: [
           // 面包屑导航
           _buildBreadcrumb(),
+          if (_drillPath.isNotEmpty) SizedBox(height: 10.h),
 
-          // 空状态
-          if (currentBanks.isEmpty && _drillPath.isEmpty)
+          // 银行列表（竖排全宽）
+          if (currentBanks.isNotEmpty) ...[
+            ...currentBanks.map((bank) => _buildBankRow(bank)),
+          ] else if (isRoot && _bankTreeRaw.isEmpty)
+            // 根层级且无题库
             Padding(
-              padding: EdgeInsets.symmetric(vertical: 16.h),
+              padding: EdgeInsets.only(top: 8.h),
               child: Center(
                 child: Text('暂无题库，请先创建', style: TextStyle(color: AppTheme.textTertiary, fontSize: 13.sp)),
               ),
+            )
+          else if (!isRoot)
+            // 非根层级且无子题库
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 12.h),
+              child: Center(
+                child: Column(children: [
+                  Icon(Icons.folder_outlined, size: 36.sp, color: AppTheme.textTertiary.withAlpha(100)),
+                  SizedBox(height: 6.h),
+                  Text('此层级下无子题库', style: TextStyle(color: AppTheme.textTertiary, fontSize: 13.sp)),
+                ]),
+              ),
             ),
-
-          // 银行网格
-          if (currentBanks.isNotEmpty) ...[
-            SizedBox(height: 12.h),
-            Wrap(
-              spacing: 8.w,
-              runSpacing: 8.h,
-              children: currentBanks.map((bank) => _buildBankChip(bank)).toList(),
-            ),
-          ],
 
           // 选中当前层级题库的提示
           if (_drillPath.isNotEmpty && (_selectedBank == null || _selectedBank!.id != _drillPath.last.id)) ...[
@@ -390,6 +403,92 @@ class _PracticePageState extends State<PracticePage> {
     );
   }
 
+  /// 单个题库行（全宽卡片）
+  Widget _buildBankRow(Map<String, dynamic> bank) {
+    final id = bank['id'] as String;
+    final name = bank['name'] as String;
+    final hasChildren = (bank['children'] as List<dynamic>?)?.isNotEmpty ?? false;
+    final count = _descendantCounts[id] ?? 0;
+    final isSelected = _selectedBank?.id == id;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: 6.h),
+      child: InkWell(
+        onTap: () {
+          if (hasChildren) {
+            _drillInto(id);
+          } else {
+            _selectBankById(id, name);
+          }
+        },
+        borderRadius: BorderRadius.circular(12.r),
+        child: Container(
+          height: 64.h,
+          padding: EdgeInsets.symmetric(horizontal: 14.w),
+          decoration: BoxDecoration(
+            color: isSelected ? AppTheme.primary.withAlpha(15) : AppTheme.bgSection,
+            borderRadius: BorderRadius.circular(12.r),
+            border: Border.all(
+              color: isSelected ? AppTheme.primary : AppTheme.border.withAlpha(120),
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              // 左侧图标
+              Container(
+                width: 40.w, height: 40.w,
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withAlpha(20),
+                  borderRadius: BorderRadius.circular(10.r),
+                ),
+                child: Icon(
+                  hasChildren ? Icons.folder_rounded : Icons.menu_book_rounded,
+                  color: AppTheme.primary,
+                  size: 20.sp,
+                ),
+              ),
+              SizedBox(width: 12.w),
+              // 名称 + 题数
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 15.sp,
+                        fontWeight: FontWeight.w600,
+                        color: isSelected ? AppTheme.primary : AppTheme.textPrimary,
+                        fontFamily: 'Inter',
+                      ),
+                    ),
+                    SizedBox(height: 2.h),
+                    Text(
+                      hasChildren ? (count > 0 ? '$count 题（含子题库）' : '暂无题目') : (count > 0 ? '$count 题' : '暂无题目'),
+                      style: TextStyle(
+                        fontSize: 12.sp,
+                        color: count > 0 ? AppTheme.primary : AppTheme.textTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // 右侧操作图标
+              if (hasChildren)
+                Icon(Icons.chevron_right, size: 20.sp, color: AppTheme.textTertiary)
+              else
+                Icon(Icons.play_circle_outline, size: 22.sp, color: AppTheme.primary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 面包屑
   Widget _buildBreadcrumb() {
     if (_drillPath.isEmpty) return const SizedBox.shrink();
@@ -433,63 +532,6 @@ class _PracticePageState extends State<PracticePage> {
     );
   }
 
-  /// 单个题库卡片
-  Widget _buildBankChip(Map<String, dynamic> bank) {
-    final id = bank['id'] as String;
-    final name = bank['name'] as String;
-    final hasChildren = (bank['children'] as List<dynamic>?)?.isNotEmpty ?? false;
-    final isSelected = _selectedBank?.id == id;
-
-    return GestureDetector(
-      onTap: () {
-        if (hasChildren) {
-          _drillInto(id);
-        } else {
-          _selectBankById(id, name);
-        }
-      },
-      child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 10.h),
-        decoration: BoxDecoration(
-          color: isSelected ? AppTheme.primary : Colors.white,
-          borderRadius: BorderRadius.circular(10.r),
-          border: Border.all(
-            color: isSelected ? AppTheme.primary : (hasChildren ? AppTheme.indigo100 : AppTheme.border),
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              hasChildren ? Icons.folder_outlined : Icons.description_outlined,
-              size: 16.sp,
-              color: isSelected ? Colors.white : (hasChildren ? AppTheme.primary : AppTheme.textTertiary),
-            ),
-            SizedBox(width: 6.w),
-            Text(
-              name,
-              style: TextStyle(
-                fontSize: 13.sp,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                color: isSelected ? Colors.white : AppTheme.textPrimary,
-                fontFamily: 'Inter',
-              ),
-            ),
-            if (hasChildren) ...[
-              SizedBox(width: 4.w),
-              Icon(
-                Icons.chevron_right,
-                size: 16.sp,
-                color: isSelected ? Colors.white70 : AppTheme.textTertiary,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildModeSelector() {
     return Container(
       padding: EdgeInsets.all(4.w),
@@ -510,7 +552,14 @@ class _PracticePageState extends State<PracticePage> {
   Widget _modeTab(PracticeMode mode, String label, IconData icon) {
     final selected = _mode == mode;
     return GestureDetector(
-      onTap: () => setState(() => _mode = mode),
+      onTap: () => setState(() {
+        _mode = mode;
+        if (mode == PracticeMode.wrong) {
+          _wrongCtrl.text = '1';
+          _minWrongCount = 1;
+          _wrongError = null;
+        }
+      }),
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 14.h),
         decoration: BoxDecoration(
@@ -537,6 +586,25 @@ class _PracticePageState extends State<PracticePage> {
     );
   }
 
+  void _validateWrongInput() {
+    final text = _wrongCtrl.text.trim();
+    if (text.isEmpty) {
+      _wrongError = '请输入错误次数';
+      return;
+    }
+    final v = int.tryParse(text);
+    if (v == null) {
+      _wrongError = '请输入有效数字';
+      return;
+    }
+    if (v < 1) {
+      _wrongError = '错误次数必须 ≥ 1';
+      return;
+    }
+    _wrongError = null;
+    _minWrongCount = v;
+  }
+
   Widget _buildWrongThresholdControl() {
     return Container(
       padding: EdgeInsets.all(16.w),
@@ -548,33 +616,49 @@ class _PracticePageState extends State<PracticePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('最小错误次数', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.sp, color: AppTheme.textPrimary)),
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
-                decoration: BoxDecoration(
-                  color: AppTheme.indigo50,
-                  borderRadius: BorderRadius.circular(12.r),
-                ),
-                child: Text(
-                  '>= $_minScore',
-                  style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold, fontSize: 13.sp, fontFamily: 'Inter'),
-                ),
-              ),
-            ],
-          ),
+          Text('最小错误次数', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.sp, color: AppTheme.textPrimary)),
           SizedBox(height: 8.h),
-          Slider(
-            value: _minScore.toDouble(),
-            min: -1,
-            max: 1,
-            divisions: 2,
-            label: '>= $_minScore',
-            onChanged: (v) => setState(() => _minScore = v.toInt()),
+          TextField(
+            controller: _wrongCtrl,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              hintText: '默认 1',
+              filled: true,
+              fillColor: AppTheme.bgSection,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10.r),
+                borderSide: BorderSide(color: _wrongError != null ? AppTheme.red : AppTheme.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10.r),
+                borderSide: BorderSide(color: _wrongError != null ? AppTheme.red : AppTheme.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10.r),
+                borderSide: BorderSide(color: _wrongError != null ? AppTheme.red : AppTheme.primary, width: 2),
+              ),
+              contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+              suffixIcon: IconButton(
+                icon: Icon(Icons.check_circle_outline, size: 20.sp, color: _wrongError != null ? AppTheme.textTertiary : AppTheme.primary),
+                onPressed: () {
+                  setState(() => _validateWrongInput());
+                },
+              ),
+            ),
+            onSubmitted: (_) => setState(() => _validateWrongInput()),
+            onChanged: (_) {
+              if (_wrongError != null) setState(() => _validateWrongInput());
+            },
           ),
-          Text('筛选掌握程度 <= $_minScore 的题目 (-1=不会, 0=模糊, 1=掌握)', style: TextStyle(color: AppTheme.textTertiary, fontSize: 12.sp)),
+          if (_wrongError != null) ...[
+            SizedBox(height: 6.h),
+            Text(_wrongError!, style: TextStyle(color: AppTheme.red, fontSize: 12.sp)),
+          ],
+          SizedBox(height: 8.h),
+          Text(
+            '筛选错误次数 ≥ $_minWrongCount 的题目',
+            style: TextStyle(color: AppTheme.textTertiary, fontSize: 12.sp),
+          ),
         ],
       ),
     );
@@ -593,6 +677,7 @@ class PracticeQuizPage extends StatefulWidget {
 class _PracticeQuizPageState extends State<PracticeQuizPage> {
   List<KbQa> _questions = [];
   int _currentIndex = 0;
+  late PageController _pageController;
   List<bool> _revealed = [];
   List<List<TextEditingController>> _userAnswerCtrls = [];
   bool _showExitConfirm = false;
@@ -603,6 +688,7 @@ class _PracticeQuizPageState extends State<PracticeQuizPage> {
   void initState() {
     super.initState();
     _questions = widget.questions;
+    _pageController = PageController();
     _revealed = List.filled(_questions.length, false);
     _userAnswerCtrls = List.generate(
       _questions.length,
@@ -615,6 +701,7 @@ class _PracticeQuizPageState extends State<PracticeQuizPage> {
 
   @override
   void dispose() {
+    _pageController.dispose();
     for (final ctrlList in _userAnswerCtrls) {
       for (final c in ctrlList) c.dispose();
     }
@@ -638,15 +725,8 @@ class _PracticeQuizPageState extends State<PracticeQuizPage> {
     final newRight = qa.right + (isCorrect ? 1 : 0);
     final newWrong = qa.wrong + (isCorrect ? 0 : 1);
 
-    try {
-      await ApiService.updateQa(qa.id, {'total': newTotal, 'right': newRight, 'wrong': newWrong});
-    } catch (e) {
-      debugPrint('统计更新失败: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('统计更新失败: $e'), backgroundColor: Colors.orange),
-      );
-    }
+    // API 静默更新统计（后端暂未支持则忽略）
+    ApiService.updateQa(qa.id, {'total': newTotal, 'right': newRight, 'wrong': newWrong}).catchError((_) {});
 
     setState(() {
       _revealed[_currentIndex] = true;
@@ -661,6 +741,8 @@ class _PracticeQuizPageState extends State<PracticeQuizPage> {
         right: newRight,
         wrong: newWrong,
         randomInt: qa.randomInt,
+        score: qa.score,
+        sortOrder: qa.sortOrder,
         categoryId: qa.categoryId,
         tagId: qa.tagId,
       );
@@ -668,11 +750,19 @@ class _PracticeQuizPageState extends State<PracticeQuizPage> {
   }
 
   void _nextQuestion() {
-    if (_currentIndex < _questions.length - 1) setState(() => _currentIndex++);
+    if (_currentIndex < _questions.length - 1) {
+      _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+    }
   }
 
   void _prevQuestion() {
-    if (_currentIndex > 0) setState(() => _currentIndex--);
+    if (_currentIndex > 0) {
+      _pageController.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+    }
+  }
+
+  void _onPageChanged(int index) {
+    setState(() => _currentIndex = index);
   }
 
   void _exitPractice() {
@@ -701,288 +791,309 @@ class _PracticeQuizPageState extends State<PracticeQuizPage> {
   @override
   Widget build(BuildContext context) {
     final qa = _questions[_currentIndex];
-    final revealed = _revealed[_currentIndex];
-    final isLast = _currentIndex == _questions.length - 1;
-    final userAnswerCtrls = _userAnswerCtrls[_currentIndex];
+    final progress = (_currentIndex + (_revealed[_currentIndex] ? 1 : 0)) / _questions.length;
 
     return Scaffold(
-        body: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.all(16.w),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: EdgeInsets.all(20.w),
-                      decoration: BoxDecoration(
-                        color: AppTheme.bgCard,
-                        borderRadius: BorderRadius.circular(14.r),
-                        border: Border.all(color: AppTheme.border),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text('第 ${_currentIndex + 1} 题', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16.sp, fontFamily: 'Inter', color: AppTheme.textPrimary)),
-                              ),
-                              if (widget.bank != null)
-                                Chip(
-                                  label: Text(widget.bank!.name, style: TextStyle(fontSize: 11.sp, fontFamily: 'Inter')),
-                                  backgroundColor: AppTheme.bgSection,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.r)),
-                                ),
-                              SizedBox(width: 8.w),
-                              IconButton(
-                                icon: const Icon(Icons.close_rounded, size: 20),
-                                color: AppTheme.textTertiary,
-                                onPressed: _exitPractice,
-                                tooltip: '退出练习',
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: 20.h),
-                          Container(
-                            width: double.infinity,
-                            padding: EdgeInsets.all(16.w),
-                            decoration: BoxDecoration(
-                              color: AppTheme.bgSection,
-                              borderRadius: BorderRadius.circular(12.r),
-                            ),
-                            child: QuestionRichText(
-                              text: qa.question,
-                              revealed: revealed,
-                              answers: qa.answer,
-                              fontSize: 18,
-                            ),
-                          ),
-                        ],
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.close_rounded),
+          tooltip: '退出练习',
+          onPressed: _exitPractice,
+        ),
+        title: Text(
+          '第 ${_currentIndex + 1} / ${_questions.length} 题',
+          style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w600, fontFamily: 'Inter'),
+        ),
+        centerTitle: true,
+        actions: [
+          if (widget.bank != null)
+            Padding(
+              padding: EdgeInsets.only(right: 8.w),
+              child: Chip(
+                label: Text(widget.bank!.name, style: TextStyle(fontSize: 11.sp)),
+                backgroundColor: AppTheme.indigo50,
+                labelStyle: TextStyle(color: AppTheme.primary),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.r)),
+                padding: EdgeInsets.zero,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+        ],
+        bottom: PreferredSize(
+          preferredSize: Size.fromHeight(6.h),
+          child: Column(children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(2.r),
+              child: LinearProgressIndicator(
+                value: progress, minHeight: 3.h,
+                backgroundColor: AppTheme.border.withAlpha(80),
+                valueColor: const AlwaysStoppedAnimation(AppTheme.primary),
+              ),
+            ),
+            SizedBox(height: 3.h),
+          ]),
+        ),
+      ),
+      body: PageView.builder(
+        controller: _pageController,
+        onPageChanged: _onPageChanged,
+        itemCount: _questions.length,
+        itemBuilder: (ctx, i) {
+          final qi = _questions[i];
+          final revealed = _revealed[i];
+          final ctrls = _userAnswerCtrls[i];
+          final isLast = i == _questions.length - 1;
+          return SingleChildScrollView(
+            padding: EdgeInsets.all(16.w),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 题目卡片
+                _buildQuestionCard(qi, i, revealed),
+                SizedBox(height: 20.h),
+                // 答题区 / 结果区
+                if (!revealed)
+                  _buildAnswerArea(qi, ctrls, i)
+                else ...[
+                  _buildResultArea(qi, ctrls),
+                  SizedBox(height: 16.h),
+                  _buildStatsCard(qi),
+                  // 最后一题答完后提示
+                  if (isLast)
+                    Padding(
+                      padding: EdgeInsets.only(top: 8.h),
+                      child: Center(
+                        child: Text('已完成全部题目，左滑回顾',
+                          style: TextStyle(fontSize: 12.sp, color: AppTheme.textTertiary)),
                       ),
                     ),
-                    SizedBox(height: 20.h),
-                    if (!revealed) ...[
-                      Container(
-                        padding: EdgeInsets.all(16.w),
-                        decoration: BoxDecoration(
-                          color: AppTheme.bgCard,
-                          borderRadius: BorderRadius.circular(14.r),
-                          border: Border.all(color: AppTheme.border),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('请填空作答', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.sp, fontFamily: 'Inter', color: AppTheme.textPrimary)),
-                            SizedBox(height: 12.h),
-                            ...List.generate(qa.answer.length, (i) => Padding(
-                              padding: EdgeInsets.only(bottom: 12.h),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 24.w,
-                                    height: 24.w,
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.indigo50,
-                                      borderRadius: BorderRadius.circular(6.r),
-                                    ),
-                                    child: Center(
-                                      child: Text('${i + 1}', style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.bold, color: AppTheme.primary, fontFamily: 'Inter')),
-                                    ),
-                                  ),
-                                  SizedBox(width: 8.w),
-                                  Expanded(
-                                    child: TextField(
-                                      controller: userAnswerCtrls[i],
-                                      decoration: InputDecoration(
-                                        hintText: '空${i + 1} 的答案',
-                                        filled: true,
-                                        fillColor: AppTheme.bgSection,
-                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10.r), borderSide: const BorderSide(color: AppTheme.border)),
-                                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10.r), borderSide: const BorderSide(color: AppTheme.border)),
-                                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10.r), borderSide: const BorderSide(color: AppTheme.primary, width: 2)),
-                                        contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )),
-                            SizedBox(height: 8.h),
-                            SizedBox(
-                              width: double.infinity,
-                              height: 48.h,
-                              child: ElevatedButton.icon(
-                                onPressed: _submitAnswer,
-                                icon: const Icon(Icons.check, color: Colors.white),
-                                label: const Text('提交答案', style: TextStyle(fontWeight: FontWeight.w600, fontFamily: 'Inter')),
-                                style: ElevatedButton.styleFrom(
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14.r)),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ] else ...[
-                      Container(
-                        padding: EdgeInsets.all(16.w),
-                        decoration: BoxDecoration(
-                          color: AppTheme.bgCard,
-                          borderRadius: BorderRadius.circular(14.r),
-                          border: Border.all(color: AppTheme.border),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('答题结果', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.sp, fontFamily: 'Inter', color: AppTheme.textPrimary)),
-                            SizedBox(height: 12.h),
-                            ...List.generate(qa.answer.length, (i) {
-                              final isCorrect = userAnswerCtrls[i].text.trim() == qa.answer[i];
-                              final borderColor = isCorrect ? AppTheme.green : AppTheme.red;
-                              return Padding(
-                                padding: EdgeInsets.only(bottom: 16.h),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      crossAxisAlignment: CrossAxisAlignment.center,
-                                      children: [
-                                        Container(
-                                          width: 24.w,
-                                          height: 24.w,
-                                          decoration: BoxDecoration(
-                                            color: isCorrect ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
-                                            borderRadius: BorderRadius.circular(6.r),
-                                            border: Border.all(color: borderColor, width: 1.5),
-                                          ),
-                                          child: Center(
-                                            child: Icon(
-                                              isCorrect ? Icons.check : Icons.close,
-                                              size: 14,
-                                              color: borderColor,
-                                            ),
-                                          ),
-                                        ),
-                                        SizedBox(width: 8.w),
-                                        Expanded(
-                                          child: TextField(
-                                            controller: userAnswerCtrls[i],
-                                            readOnly: true,
-                                            decoration: InputDecoration(
-                                              filled: true,
-                                              fillColor: AppTheme.bgSection,
-                                              border: OutlineInputBorder(
-                                                borderRadius: BorderRadius.circular(10.r),
-                                                borderSide: BorderSide(color: borderColor, width: 1.5),
-                                              ),
-                                              enabledBorder: OutlineInputBorder(
-                                                borderRadius: BorderRadius.circular(10.r),
-                                                borderSide: BorderSide(color: borderColor, width: 1.5),
-                                              ),
-                                              contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
-                                            ),
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              fontFamily: 'Inter',
-                                              color: isCorrect ? AppTheme.green : AppTheme.red,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    SizedBox(height: 6.h),
-                                    Padding(
-                                      padding: EdgeInsets.only(left: 32.w),
-                                      child: Row(
-                                        children: [
-                                          Text('正确答案：', style: TextStyle(fontSize: 12.sp, color: AppTheme.textTertiary, fontFamily: 'Inter')),
-                                          Text(qa.answer[i], style: TextStyle(fontSize: 13.sp, color: AppTheme.textPrimary, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
+                ],
+              ],
+            ),
+          );
+        },
+      ),
+      bottomNavigationBar: _showExitConfirm
+          ? Container(
+              padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 16.h),
+              decoration: BoxDecoration(
+                color: AppTheme.bgCard,
+                border: Border(top: BorderSide(color: AppTheme.border)),
+              ),
+              child: Row(children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _cancelExit,
+                    child: const Text('继续练习'),
+                  ),
+                ),
+                SizedBox(width: 12.w),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _confirmExit,
+                    style: ElevatedButton.styleFrom(backgroundColor: AppTheme.red),
+                    child: const Text('退出', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white)),
+                  ),
+                ),
+              ]),
+            )
+          : Container(
+              padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 12.h),
+              decoration: BoxDecoration(
+                color: AppTheme.bgCard,
+                border: Border(top: BorderSide(color: AppTheme.border)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(_questions.length, (i) {
+                  final isCurrent = i == _currentIndex;
+                  final isAnswered = _revealed[i];
+                  return Container(
+                    width: isCurrent ? 20.w : 8.w,
+                    height: 8.w,
+                    margin: EdgeInsets.symmetric(horizontal: 3.w),
+                    decoration: BoxDecoration(
+                      color: isCurrent
+                          ? AppTheme.primary
+                          : isAnswered
+                              ? AppTheme.primary.withAlpha(80)
+                              : AppTheme.border,
+                      borderRadius: BorderRadius.circular(4.r),
+                    ),
+                  );
+                }),
+              ),
+            ),
+    );
+  }
+
+  Widget _buildQuestionCard(KbQa qa, int index, bool revealed) {
+    return Container(
+      padding: EdgeInsets.all(20.w),
+      decoration: BoxDecoration(
+        color: AppTheme.bgCard,
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Container(
+              width: 28.w, height: 28.w,
+              decoration: BoxDecoration(color: AppTheme.primary, borderRadius: BorderRadius.circular(8.r)),
+              child: Center(child: Text('${index + 1}', style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.bold, color: Colors.white))),
+            ),
+            SizedBox(width: 10.w),
+            Text('填空题', style: TextStyle(fontSize: 12.sp, color: AppTheme.textTertiary, fontFamily: 'Inter')),
+          ]),
+          SizedBox(height: 16.h),
+          Container(
+            width: double.infinity, padding: EdgeInsets.all(16.w),
+            decoration: BoxDecoration(color: AppTheme.bgSection, borderRadius: BorderRadius.circular(12.r)),
+            child: QuestionRichText(text: qa.question, revealed: revealed, answers: qa.answer, fontSize: 18),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnswerArea(KbQa qa, List<TextEditingController> ctrls, int pageIndex) {
+    return Container(
+      padding: EdgeInsets.all(16.w),
+      decoration: BoxDecoration(color: AppTheme.bgCard, borderRadius: BorderRadius.circular(14.r), border: Border.all(color: AppTheme.border)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('请填空作答', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.sp, fontFamily: 'Inter', color: AppTheme.textPrimary)),
+        SizedBox(height: 12.h),
+        ...List.generate(qa.answer.length, (i) => Padding(
+          padding: EdgeInsets.only(bottom: 12.h),
+          child: Row(children: [
+            Container(
+              width: 24.w, height: 24.w,
+              decoration: BoxDecoration(color: AppTheme.indigo50, borderRadius: BorderRadius.circular(6.r)),
+              child: Center(child: Text('${i + 1}', style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.bold, color: AppTheme.primary, fontFamily: 'Inter'))),
+            ),
+            SizedBox(width: 8.w),
+            Expanded(
+              child: TextField(
+                controller: ctrls[i],
+                autofocus: i == 0,
+                decoration: InputDecoration(
+                  hintText: '空${i + 1} 的答案',
+                  filled: true, fillColor: AppTheme.bgSection,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10.r), borderSide: const BorderSide(color: AppTheme.border)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10.r), borderSide: const BorderSide(color: AppTheme.border)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10.r), borderSide: const BorderSide(color: AppTheme.primary, width: 2)),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
                 ),
               ),
             ),
-            if (_showExitConfirm)
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
-                decoration: BoxDecoration(
-                  color: AppTheme.bgCard,
-                  border: Border(top: BorderSide(color: AppTheme.border)),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _cancelExit,
-                        child: const Text('继续练习'),
-                      ),
-                    ),
-                    SizedBox(width: 12.w),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: _confirmExit,
-                        style: ElevatedButton.styleFrom(backgroundColor: AppTheme.red),
-                        child: const Text('退出', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white)),
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            else
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
-                decoration: BoxDecoration(
-                  color: AppTheme.bgCard,
-                  border: Border(top: BorderSide(color: AppTheme.border)),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _currentIndex > 0 ? _prevQuestion : null,
-                        icon: const Icon(Icons.chevron_left),
-                        label: const Text('上一题'),
-                      ),
-                    ),
-                    SizedBox(width: 12.w),
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
-                      decoration: BoxDecoration(
-                        color: AppTheme.indigo50,
-                        borderRadius: BorderRadius.circular(20.r),
-                      ),
-                      child: Text(
-                        '${_currentIndex + 1} / ${_questions.length}',
-                        style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w600, fontSize: 13.sp, fontFamily: 'Inter'),
-                      ),
-                    ),
-                    SizedBox(width: 12.w),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _revealed[_currentIndex] ? (!isLast ? _nextQuestion : () => Navigator.pop(context)) : null,
-                        iconAlignment: IconAlignment.end,
-                        icon: isLast ? const SizedBox.shrink() : const Icon(Icons.chevron_right, color: Colors.white),
-                        label: Text(isLast ? '返回' : '下一题', style: TextStyle(fontWeight: FontWeight.w600)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
+          ]),
+        )),
+        SizedBox(height: 8.h),
+        SizedBox(
+          width: double.infinity, height: 48.h,
+          child: ElevatedButton.icon(
+            onPressed: _submitAnswer,
+            icon: const Icon(Icons.check, color: Colors.white),
+            label: const Text('提交答案', style: TextStyle(fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+            style: ElevatedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14.r))),
+          ),
         ),
+      ]),
+    );
+  }
+
+  Widget _buildResultArea(KbQa qa, List<TextEditingController> ctrls) {
+    return Container(
+      padding: EdgeInsets.all(16.w),
+      decoration: BoxDecoration(color: AppTheme.bgCard, borderRadius: BorderRadius.circular(14.r), border: Border.all(color: AppTheme.border)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('答题结果', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.sp, fontFamily: 'Inter', color: AppTheme.textPrimary)),
+        SizedBox(height: 12.h),
+        ...List.generate(qa.answer.length, (i) {
+          final isCorrect = ctrls[i].text.trim() == qa.answer[i];
+          final borderColor = isCorrect ? AppTheme.green : AppTheme.red;
+          return Padding(
+            padding: EdgeInsets.only(bottom: 16.h),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Container(
+                  width: 24.w, height: 24.w,
+                  decoration: BoxDecoration(
+                    color: isCorrect ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
+                    borderRadius: BorderRadius.circular(6.r),
+                    border: Border.all(color: borderColor, width: 1.5),
+                  ),
+                  child: Center(child: Icon(isCorrect ? Icons.check : Icons.close, size: 14, color: borderColor)),
+                ),
+                SizedBox(width: 8.w),
+                Expanded(
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+                    decoration: BoxDecoration(color: AppTheme.bgSection, borderRadius: BorderRadius.circular(10.r), border: Border.all(color: borderColor, width: 1.5)),
+                    child: Text(ctrls[i].text, style: TextStyle(fontSize: 14, fontFamily: 'Inter', color: isCorrect ? AppTheme.green : AppTheme.red, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ]),
+              SizedBox(height: 6.h),
+              Padding(
+                padding: EdgeInsets.only(left: 32.w),
+                child: Row(children: [
+                  Text('正确答案：', style: TextStyle(fontSize: 12.sp, color: AppTheme.textTertiary, fontFamily: 'Inter')),
+                  Flexible(child: Text(qa.answer[i], style: TextStyle(fontSize: 13.sp, color: AppTheme.textPrimary, fontWeight: FontWeight.w600, fontFamily: 'Inter'))),
+                ]),
+              ),
+            ]),
+          );
+        }),
+      ]),
+    );
+  }
+
+  Widget _buildStatsCard(KbQa qa) {
+    final accuracy = qa.total > 0 ? (qa.right / qa.total * 100).round() : 0;
+    return Container(
+      padding: EdgeInsets.all(16.w),
+      decoration: BoxDecoration(
+        color: AppTheme.bgCard,
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.bar_chart_rounded, size: 18.sp, color: AppTheme.primary),
+          SizedBox(width: 6.w),
+          Text('练习统计', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.sp, fontFamily: 'Inter', color: AppTheme.textPrimary)),
+        ]),
+        SizedBox(height: 12.h),
+        Row(children: [
+          _statItem(label: '总次数', value: qa.total, color: AppTheme.textPrimary),
+          _statItem(label: '答对', value: qa.right, color: AppTheme.green),
+          _statItem(label: '答错', value: qa.wrong, color: AppTheme.red),
+        ]),
+        SizedBox(height: 10.h),
+        Row(children: [
+          Text('正确率 ', style: TextStyle(fontSize: 12.sp, color: AppTheme.textTertiary)),
+          Text('$accuracy%',
+            style: TextStyle(
+              fontSize: 14.sp, fontWeight: FontWeight.bold,
+              color: accuracy >= 60 ? AppTheme.green : AppTheme.red,
+              fontFamily: 'Inter',
+            ),
+          ),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _statItem({required String label, required int value, required Color color}) {
+    return Expanded(
+      child: Column(children: [
+        Text('$value', style: TextStyle(fontSize: 22.sp, fontWeight: FontWeight.bold, color: color, fontFamily: 'Inter')),
+        SizedBox(height: 2.h),
+        Text(label, style: TextStyle(fontSize: 11.sp, color: AppTheme.textTertiary)),
+      ]),
     );
   }
 }

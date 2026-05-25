@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-DEPLOY_DIR="/opt/frances-allen"
+DEPLOY_DIR="/home/frances-allen"
 SERVER_DIR="$DEPLOY_DIR/server"
 VENV_DIR="$DEPLOY_DIR/venv"
 TARBALL="/home/server.tar.gz"

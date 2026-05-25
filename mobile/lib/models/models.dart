@@ -72,6 +72,8 @@ class KbQa {
   final int right;
   final int wrong;
   final int randomInt;
+  final int score;
+  final int sortOrder;
   final String? categoryId;
   final List<String>? tagId;
 
@@ -86,6 +88,8 @@ class KbQa {
     this.right = 0,
     this.wrong = 0,
     this.randomInt = 0,
+    this.score = 0,
+    this.sortOrder = 0,
     this.categoryId,
     this.tagId,
   });
@@ -105,6 +109,8 @@ class KbQa {
       right: json['right'] ?? 0,
       wrong: json['wrong'] ?? 0,
       randomInt: json['random_int'] ?? 0,
+      score: json['score'] ?? 0,
+      sortOrder: json['sort_order'] ?? 0,
       categoryId: json['category_id'],
       tagId: _parseTagId(json['tag_id']),
     );

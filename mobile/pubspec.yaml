@@ -1,5 +1,5 @@
 name: frances_allen
-description: "知识问答练习 App"
+description: "知识库"
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -20,6 +20,12 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/kb.png"
 
 flutter:
   uses-material-design: true

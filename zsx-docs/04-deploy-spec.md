@@ -17,10 +17,10 @@
 ## 2. 生产环境信息
 
 - 服务器：阿里云ECS `8.160.174.178`（root）
-- 部署目录：`/opt/frances-allen/`
+- 部署目录：`/home/frances-allen/`
 - 服务管理：`systemctl`，服务名 `frances-allen`
 - 运行用户：root
-- Python环境：`/opt/frances-allen/venv/`
+- Python环境：`/home/frances-allen/venv/`
 - 数据库：阿里云RDS MySQL `rm-bp148re5az8vk250qyo.mysql.rds.aliyuncs.com:3306`
 
 ---
@@ -43,7 +43,7 @@ scp /tmp/frances-allen-server-v{VERSION}.tar.gz root@8.160.174.178:/home/server.
 ### 3.3 自动部署
 
 ```bash
-ssh root@8.160.174.178 "cd /opt/frances-allen && tar -xzf /home/server.tar.gz && systemctl restart frances-allen"
+ssh root@8.160.174.178 "cd /home/frances-allen && tar -xzf /home/server.tar.gz && systemctl restart frances-allen"
 ```
 
 ### 3.4 数据库迁移（如需要）

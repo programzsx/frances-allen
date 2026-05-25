@@ -6,7 +6,7 @@
 set -e
 
 ECS_HOST="root@8.160.174.178"
-ECS_DEPLOY_DIR="/opt/frances-allen"
+ECS_DEPLOY_DIR="/home/frances-allen"
 SERVER_TAR="server.tar.gz"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -72,7 +72,7 @@ if [ "$SKIP_MIGRATION" = false ]; then
                 echo "  Running: $fname"
                 scp "$sql" "$ECS_HOST:/tmp/$fname" > /dev/null 2>&1
                 ssh "$ECS_HOST" "
-                    source /opt/frances-allen/server/.env 2>/dev/null
+                    source /home/frances-allen/server/.env 2>/dev/null
                     mysql -h \"\$DB_HOST\" -u \"\$DB_USER\" -p\"\$DB_PASSWORD\" \"\$DB_NAME\" < /tmp/$fname 2>&1 || echo '  (may already be applied)'
                 " 2>/dev/null
             fi

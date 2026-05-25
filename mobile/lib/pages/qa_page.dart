@@ -3,7 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/data_cache.dart';
-import 'qa_detail_page.dart';
+import 'single_qa_practice_page.dart';
 import 'qa_form_page.dart';
 import 'bank_page.dart';
 import 'tag_page.dart';
@@ -36,6 +36,12 @@ class _QaPageState extends State<QaPage> {
   List<KbBank> _banks = [];
   List<KbTag> _tags = [];
 
+  // 题库树（层级下钻）
+  List<Map<String, dynamic>> _bankTree = [];
+  Map<String, int> _descendantCounts = {};
+  final Set<String> _expandedIds = {};
+  String? _selectedBankName;
+
   @override
   void initState() {
     super.initState();
@@ -43,6 +49,7 @@ class _QaPageState extends State<QaPage> {
     _tid = widget.initialTagId;
     _fetchMeta();
     _fetch();
+    _loadBankTree();
     _sc.addListener(_more);
   }
 
@@ -96,14 +103,57 @@ class _QaPageState extends State<QaPage> {
     }
   }
 
-  void _toggleBank(String? id) {
+  Future<void> _loadBankTree() async {
+    try {
+      final tree = await ApiService.getBankTree();
+      final counts = await ApiService.getDescendantCounts();
+      if (mounted) {
+        setState(() {
+          _bankTree = (tree as List<dynamic>).cast<Map<String, dynamic>>();
+          _descendantCounts = counts;
+        });
+      }
+    } catch (_) {}
+  }
+
+  void _toggleBank(String id, String name) {
     setState(() {
-      _bid = _bid == id ? null : id;
-      _tid = null;
+      if (id.isEmpty || _bid == id) {
+        // 清空 → 取消筛选
+        _bid = null;
+        _selectedBankName = null;
+      } else {
+        _bid = id;
+        _selectedBankName = name;
+        _tid = null;
+      }
       _currentPage = 1;
       _qas = [];
     });
     _fetch();
+  }
+
+  /// 展开/折叠树节点
+  void _toggleExpand(String id) {
+    setState(() {
+      if (_expandedIds.contains(id)) {
+        _expandedIds.remove(id);
+      } else {
+        _expandedIds.add(id);
+      }
+    });
+  }
+
+  /// 收集节点自身及所有后代ID
+  List<String> _collectDescendantIds(Map<String, dynamic> node) {
+    final ids = <String>[node['id'] as String];
+    final children = node['children'] as List<dynamic>?;
+    if (children != null) {
+      for (final child in children) {
+        ids.addAll(_collectDescendantIds(child as Map<String, dynamic>));
+      }
+    }
+    return ids;
   }
 
   void _toggleTag(String? id) {
@@ -154,8 +204,6 @@ class _QaPageState extends State<QaPage> {
 
   @override
   Widget build(BuildContext context) {
-    final selBank = _banks.where((b) => b.id == _bid).firstOrNull;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('考试'),
@@ -226,34 +274,97 @@ class _QaPageState extends State<QaPage> {
             ),
           ),
 
-          // Bank chip row (always visible)
-          SizedBox(
-            height: 44,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              children: _banks
-                  .map((b) =>
-                      _chip(b.name, _bid == b.id, () => _toggleBank(b.id)))
-                  .toList(),
-            ),
-          ),
-
-          // Tag chip row (only when bank selected)
-          if (selBank != null && _tags.isNotEmpty)
-            SizedBox(
-              height: 38,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                children: _tags
-                    .map((t) => _chip(t.name, _tid == t.id,
-                        () => _toggleTag(t.id),
-                        small: true))
-                    .toList(),
+          // 题库树（缩进层级视图）
+          if (_bankTree.isNotEmpty)
+            Container(
+              constraints: BoxConstraints(maxHeight: 260.h),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: AppTheme.border.withAlpha(80))),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // "全部"清除筛选
+                  Material(
+                    color: _bid == null ? AppTheme.primary.withAlpha(15) : Colors.transparent,
+                    child: InkWell(
+                      onTap: () => _toggleBank('', ''),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
+                        child: Row(children: [
+                          Icon(Icons.layers_rounded, size: 16.sp, color: _bid == null ? AppTheme.primary : AppTheme.textTertiary),
+                          SizedBox(width: 8.w),
+                          Text('全部题库',
+                            style: TextStyle(
+                              fontSize: 13.sp,
+                              fontWeight: _bid == null ? FontWeight.w600 : FontWeight.w500,
+                              color: _bid == null ? AppTheme.primary : AppTheme.textPrimary,
+                            ),
+                          ),
+                          const Spacer(),
+                          if (_bid == null)
+                            Icon(Icons.check, size: 16.sp, color: AppTheme.primary),
+                        ]),
+                      ),
+                    ),
+                  ),
+                  Divider(height: 1, color: AppTheme.border.withAlpha(60)),
+                  Expanded(
+                    child: ListView(
+                      padding: EdgeInsets.zero,
+                      children: _buildTreeRows(_bankTree, 0),
+                    ),
+                  ),
+                ],
               ),
             ),
+
+          // 已选中题库标签
+          if (_selectedBankName != null) ...[
+            SizedBox(height: 8.h),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12.w),
+              child: Row(children: [
+                Chip(
+                  label: Text(_selectedBankName!, style: TextStyle(fontSize: 12.sp)),
+                  backgroundColor: AppTheme.indigo50,
+                  labelStyle: TextStyle(color: AppTheme.primary),
+                  deleteIcon: const Icon(Icons.close, size: 16),
+                  onDeleted: () => _toggleBank('', ''),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.r)),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+                if (_tags.isNotEmpty) ...[
+                  SizedBox(width: 8.w),
+                  Expanded(
+                    child: SizedBox(
+                      height: 36.h,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: _tags
+                            .map((t) => Padding(
+                              padding: EdgeInsets.only(right: 6.w),
+                              child: ChoiceChip(
+                                label: Text(t.name, style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.w500,
+                                    color: _tid == t.id ? Colors.white : AppTheme.textSoft)),
+                                selected: _tid == t.id,
+                                onSelected: (_) => _toggleTag(t.id),
+                                selectedColor: AppTheme.primary,
+                                backgroundColor: AppTheme.bg,
+                                side: BorderSide.none,
+                                visualDensity: VisualDensity.compact,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6.r)),
+                              ),
+                            ))
+                            .toList(),
+                      ),
+                    ),
+                  ),
+                ],
+              ]),
+            ),
+          ],
 
           const Divider(height: 1),
 
@@ -319,27 +430,90 @@ class _QaPageState extends State<QaPage> {
     );
   }
 
-  // ── Alan Perlis style chip ──────────────────────────
-  Widget _chip(String label, bool sel, VoidCallback fn,
-          {bool small = false}) =>
-      Padding(
-        padding: const EdgeInsets.only(right: 6),
-        child: ChoiceChip(
-          label: Text(label,
-              style: TextStyle(
-                  fontSize: small ? 11 : 12,
-                  fontWeight: FontWeight.w500,
-                  color: sel ? Colors.white : AppTheme.textSoft)),
-          selected: sel,
-          onSelected: (_) => fn(),
-          selectedColor: AppTheme.primary,
-          backgroundColor: AppTheme.bg,
-          side: BorderSide.none,
-          visualDensity: VisualDensity.compact,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(sel ? 8 : 6)),
+  // ── 树视图构建 ───────────────────────────────────
+
+  List<Widget> _buildTreeRows(List<Map<String, dynamic>> nodes, int depth) {
+    final rows = <Widget>[];
+    for (final node in nodes) {
+      final id = node['id'] as String;
+      final name = node['name'] as String;
+      final children = (node['children'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [];
+      final hasChildren = children.isNotEmpty;
+      final count = _descendantCounts[id] ?? 0;
+      final isSelected = _bid == id;
+      final isExpanded = _expandedIds.contains(id);
+
+      rows.add(
+        Material(
+          color: isSelected ? AppTheme.primary.withAlpha(12) : Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              if (hasChildren) {
+                _toggleExpand(id);
+              }
+              _toggleBank(id, name);
+            },
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: 16.w + depth * 22.w,
+                right: 12.w,
+                top: 9.h,
+                bottom: 9.h,
+              ),
+              child: Row(children: [
+                // 展开/折叠图标
+                if (hasChildren)
+                  Padding(
+                    padding: EdgeInsets.only(right: 4.w),
+                    child: Icon(
+                      isExpanded ? Icons.expand_more : Icons.chevron_right,
+                      size: 18.sp,
+                      color: AppTheme.textTertiary,
+                    ),
+                  )
+                else
+                  SizedBox(width: 22.w),
+                // 名称
+                Expanded(
+                  child: Text(name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13.sp,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                      color: isSelected ? AppTheme.primary : AppTheme.textPrimary,
+                    ),
+                  ),
+                ),
+                // 题目数
+                if (count > 0)
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withAlpha(20),
+                      borderRadius: BorderRadius.circular(10.r),
+                    ),
+                    child: Text('$count',
+                      style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.w600, color: AppTheme.primary)),
+                  ),
+                // 选中标记
+                if (isSelected) ...[
+                  SizedBox(width: 6.w),
+                  Icon(Icons.check, size: 16.sp, color: AppTheme.primary),
+                ],
+              ]),
+            ),
+          ),
         ),
       );
+
+      // 展开子节点
+      if (hasChildren && isExpanded) {
+        rows.addAll(_buildTreeRows(children, depth + 1));
+      }
+    }
+    return rows;
+  }
 
   // ── Question card ───────────────────────────────────
   Widget _card(KbQa qa) {
@@ -350,7 +524,7 @@ class _QaPageState extends State<QaPage> {
           await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => QaDetailPage(
+              builder: (_) => SingleQaPracticePage(
                 qa: qa,
                 banks: _banks,
                 tags: _tags,
