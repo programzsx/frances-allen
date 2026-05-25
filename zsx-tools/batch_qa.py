@@ -307,6 +307,13 @@ def main():
     print(f"✅ 成功: {ok}")
     print(f"❌ 失败: {fail}")
     print(f"📝 合计: {ok + fail}")
+
+    # 全部成功 → 清空 batch.md
+    if fail == 0 and ok > 0:
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write("")
+        print(f"🗑  已清空: {md_path}")
+
     sys.exit(1 if fail > 0 else 0)
 
 
