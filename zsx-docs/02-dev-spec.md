@@ -309,7 +309,7 @@ _onCacheUpdate:
 
 #### D 类：特殊页面
 
-- **DailyQuizPage**：初始路由，先进入题库选择页（展示根题库 + 后代聚合题数），选库后进入答题。完成后 `pushReplacementNamed('/home')`，不可返回
+- **DailyQuizPage**：初始路由，先进入题库选择页。支持逐层下钻导航（点击题库→进入子题库层级），面包屑路径可点击回退。每层竖排展示，点击无子题库的叶子节点直接开始练习。也可在任意层级点击"练习"按钮开始（范围=当前题库+所有后代）。完成后 `pushReplacementNamed('/home')`，不可返回
 - **PracticeQuizPage**：从 PracticePage push 进入，练习上下文随 session
 
 ### 数据请求原则
