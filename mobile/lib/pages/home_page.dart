@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'practice_page.dart';
 import 'qa_page.dart';
 import '../services/global_filter.dart';
@@ -13,7 +14,6 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _currentIndex = 0;
-  bool _canPop = false;
 
   static final List<Widget> _pages = [
     const PracticePage(),
@@ -70,14 +70,12 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: _canPop,
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         final shouldExit = await _onWillPop();
         if (shouldExit && mounted) {
-          setState(() => _canPop = true);
-          // 下一帧 PopScope 的 canPop 变为 true，系统 back 会自然退出
-          Navigator.of(context).pop();
+          SystemNavigator.pop();
         }
       },
       child: Scaffold(
