@@ -426,14 +426,16 @@ class _DailyQuizPageState extends State<DailyQuizPage> {
   }
 
   Widget _buildBreadcrumb(int totalCount) {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
-      child: Row(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
+    return SizedBox(
+      height: 44.h,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16.w),
+        child: Row(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
                 children: [
                   // 根层级
                   GestureDetector(
@@ -492,6 +494,7 @@ class _DailyQuizPageState extends State<DailyQuizPage> {
           _buildStartHereButton(),
         ],
       ),
+      ),
     );
   }
 
@@ -527,7 +530,8 @@ class _DailyQuizPageState extends State<DailyQuizPage> {
         onTap: () => _drillDown(id),
         borderRadius: BorderRadius.circular(14.r),
         child: Container(
-          padding: EdgeInsets.all(16.w),
+          height: 72.h,
+          padding: EdgeInsets.symmetric(horizontal: 16.w),
           decoration: BoxDecoration(
             color: AppTheme.bgCard,
             borderRadius: BorderRadius.circular(14.r),
@@ -542,15 +546,24 @@ class _DailyQuizPageState extends State<DailyQuizPage> {
               ),
               SizedBox(width: 14.w),
               Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(name,
-                      style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.w600, color: AppTheme.textPrimary, fontFamily: 'Inter')),
-                  SizedBox(height: 2.h),
-                  Text(
-                    count > 0 ? '$count 道题目' : '暂无题目',
-                    style: TextStyle(fontSize: 12.sp, color: count > 0 ? AppTheme.primary : AppTheme.textTertiary, fontFamily: 'Inter'),
-                  ),
-                ]),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.w600, color: AppTheme.textPrimary, fontFamily: 'Inter'),
+                    ),
+                    SizedBox(height: 2.h),
+                    Text(
+                      count > 0 ? '$count 道题目' : '暂无题目',
+                      maxLines: 1,
+                      style: TextStyle(fontSize: 12.sp, color: count > 0 ? AppTheme.primary : AppTheme.textTertiary, fontFamily: 'Inter'),
+                    ),
+                  ],
+                ),
               ),
               if (hasChildren)
                 Icon(Icons.chevron_right, color: AppTheme.textTertiary, size: 20.sp)
