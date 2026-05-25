@@ -3,17 +3,48 @@
 batch_qa.py — 批量导入题目到 Frances Allen 知识问答系统
 
 读取同级目录的 batch.md，解析 `#` / `$$$$` / `%%%%` 标记格式，
-通过 REST API 按条创建 QA 题目。
+通过 REST API 按条创建 QA 题目（基于最新 QaCreateBO schema）。
 
 用法:
-    python3 batch_qa.py                        # 读取 batch.md
-    python3 batch_qa.py /path/to/other.md      # 读取指定文件
+    python3 batch_qa.py                        # 读取同目录 batch.md
+    python3 batch_qa.py /path/to/file.md       # 读取指定文件
 
 batch.md 格式:
-    # 题库名称          → 题库名，后续题目都归入此题库（直到下一个 # 或 EOF）
-    $$$$               → 题目开始，到 %%%% 之间的内容是 question
-        image:URL      → 题目中嵌入的图片 URL（可选行，中英文冒号均支持）
-    %%%%               → 答案开始，每行一个答案（直到下一个 $$$$ / # 或 EOF）
+    # 题库名称
+        定义题库，后续题目归入此题库（直到下一个 # 或 EOF）。
+        题库不存在则自动创建。
+
+    $$$$
+        题目开始标记。以下行到 %%%% 之间为题目文本。
+        题目中 ___ 表示填空占位符。可多行。
+
+    题目属性行（可选，位于 $$$$ 和 %%%% 之间）：
+        @score 1      掌握程度 -1(不会)/0(模糊)/1(掌握)，默认 0
+        @sort 10      排序值，默认 0
+        @tag 标签1,标签2    逗号分隔的标签名称
+
+    %%%%
+        答案开始标记。每行一个答案，与题目中 ___ 一一对应。
+        直到下一个 $$$$ / # 或 EOF。
+
+完整示例:
+    # Java
+    $$$$
+    Java中___关键字用于实现接口。
+    @score 1
+    @sort 5
+    %%%%
+    implements
+    $$$$
+    JVM的全称是___。
+    %%%%
+    Java Virtual Machine
+
+    # 计算机网络
+    $$$$
+    HTTP的默认端口号是___。
+    %%%%
+    80
 """
 
 import json
@@ -29,10 +60,10 @@ API_BASE = "http://8.160.174.178:8000"
 REQUEST_TIMEOUT = 30  # 秒
 
 # ── 分隔标记 ──────────────────────────────────────────
-BANK_HEADER_RE = re.compile(r"^#\s+(.+)$")          # # 题库名
-QA_START = "$$$$"                                     # 题目开始
-ANSWER_START = "%%%%"                                 # 答案开始
-IMAGE_LINE_RE = re.compile(r"^image[：:]\s*(.+)$")    # image：URL 或 image:URL
+BANK_HEADER_RE = re.compile(r"^#\s+(.+)$")
+QA_START = "$$$$"
+ANSWER_START = "%%%%"
+ATTR_RE = re.compile(r"^@(\w+)\s+(.+)$")  # @key value
 
 
 # ═══════════════════════════════════════════════════════
@@ -40,15 +71,9 @@ IMAGE_LINE_RE = re.compile(r"^image[：:]\s*(.+)$")    # image：URL 或 image:U
 # ═══════════════════════════════════════════════════════
 
 def _request(method, path, data=None):
-    """发送 HTTP 请求，返回解析后的 JSON 或报错退出。"""
     url = f"{API_BASE}{path}"
     headers = {"Content-Type": "application/json"}
-
-    if data is not None:
-        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
-    else:
-        body = None
-
+    body = json.dumps(data, ensure_ascii=False).encode("utf-8") if data else None
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
@@ -66,7 +91,6 @@ def _request(method, path, data=None):
 
 
 def find_bank(name):
-    """按名称搜索题库，精确匹配返回 (id, name) 或 None。"""
     params = urllib.parse.urlencode({"keyword": name, "page_size": 10})
     resp = _request("GET", f"/api/banks?{params}")
     if resp is None or "items" not in resp:
@@ -78,7 +102,6 @@ def find_bank(name):
 
 
 def create_bank(name):
-    """创建题库，返回 (id, name) 或 None。"""
     resp = _request("POST", "/api/banks", {"name": name})
     if resp and "id" in resp:
         return resp["id"], resp["name"]
@@ -86,7 +109,6 @@ def create_bank(name):
 
 
 def find_or_create_bank(name):
-    """查找题库，不存在则创建。返回 (id, name) 或 None。"""
     result = find_bank(name)
     if result:
         return result
@@ -97,15 +119,17 @@ def find_or_create_bank(name):
     return result
 
 
-def create_qa(bank_id, question, answers, image_url=None):
-    """创建题目，返回 (success, id_or_error)。"""
+def create_qa(bank_id, question, answers, *, sort_order=0, score=0, tag_id=None):
+    """创建题目，所有字段对齐 QaCreateBO schema。"""
     body = {
         "question": question,
         "answer": answers,
         "category_id": bank_id,
+        "sort_order": sort_order,
+        "score": score,
     }
-    if image_url:
-        body["image_url"] = image_url
+    if tag_id:
+        body["tag_id"] = tag_id
 
     resp = _request("POST", "/api/qas", body)
     if resp and "id" in resp:
@@ -117,94 +141,98 @@ def create_qa(bank_id, question, answers, image_url=None):
 #  解析器
 # ═══════════════════════════════════════════════════════
 
+class QAItem:
+    __slots__ = ("question", "answers", "score", "sort_order", "tag_id")
+    def __init__(self):
+        self.question = ""
+        self.answers = []
+        self.score = 0
+        self.sort_order = 0
+        self.tag_id = None  # list[str] | None
+
+
+class BankSection:
+    __slots__ = ("name", "qas")
+    def __init__(self, name):
+        self.name = name
+        self.qas = []
+
+
 def parse_batch_md(content):
-    """
-    解析 batch.md 文本，返回:
-    [
-        {
-            "bank_name": "阿里云",
-            "questions": [
-                {"question": "...", "image_url": "...", "answers": ["..."]},
-            ]
-        },
-    ]
-    """
+    """解析 batch.md，返回 [BankSection, ...]"""
     lines = content.splitlines()
-    sections = []          # 最终结果
-    current_section = None # {"bank_name": str, "questions": [...]}
+    sections = []
+    current_section = None
     state = "out"          # out | in_question | in_answer
-    current_question = ""  # 当前题目文本行（多行拼接）
-    current_image = None   # 当前题目的图片 URL
-    current_answers = []   # 当前题目的答案列表
+    current_qa = None
 
     for raw in lines:
         line = raw.rstrip("\r")
 
-        # ── 题库头 # ──
+        # ── # 题库头 ──
         m = BANK_HEADER_RE.match(line)
         if m:
-            _flush_qa(state, current_question, current_image, current_answers, current_section)
-            if current_section and current_section["questions"]:
+            _commit_qa(state, current_qa, current_section)
+            if current_section and current_section.qas:
                 sections.append(current_section)
-            current_section = {"bank_name": m.group(1).strip(), "questions": []}
-            current_question, current_image, current_answers = "", None, []
+            current_section = BankSection(m.group(1).strip())
+            current_qa = None
             state = "out"
             continue
 
-        # ── $$$$ → 进入题目 ──
+        # ── $$$$ → 新题目 ──
         if line.strip() == QA_START:
-            _flush_qa(state, current_question, current_image, current_answers, current_section)
-            current_question, current_image, current_answers = "", None, []
+            _commit_qa(state, current_qa, current_section)
+            current_qa = QAItem()
             state = "in_question"
             continue
 
         # ── %%%% → 进入答案 ──
         if line.strip() == ANSWER_START:
-            # 将已收集的 question 文本整理
-            current_question = _clean_question(current_question)
+            current_qa.question = current_qa.question.strip() if current_qa else ""
             state = "in_answer"
             continue
 
         # ── 内容行 ──
         if state == "in_question":
-            # 检查是否是 image 行
-            im = IMAGE_LINE_RE.match(line.strip())
-            if im:
-                current_image = im.group(1).strip()
+            attr = ATTR_RE.match(line.strip())
+            if attr:
+                key, val = attr.group(1), attr.group(2).strip()
+                if key == "score":
+                    try:
+                        current_qa.score = max(-1, min(1, int(val)))
+                    except ValueError:
+                        print(f"  ⚠ 无效 score 值: {val}，已忽略")
+                elif key == "sort":
+                    try:
+                        current_qa.sort_order = int(val)
+                    except ValueError:
+                        print(f"  ⚠ 无效 sort 值: {val}，已忽略")
+                elif key == "tag":
+                    current_qa.tag_id = [t.strip() for t in val.split(",") if t.strip()]
             else:
-                if current_question:
-                    current_question += "\n" + line
+                if current_qa.question:
+                    current_qa.question += "\n" + line
                 else:
-                    current_question = line
+                    current_qa.question = line
+
         elif state == "in_answer":
             stripped = line.strip()
             if stripped:
-                current_answers.append(stripped)
-        # else: state == "out" — 忽略
+                current_qa.answers.append(stripped)
 
-    # 文件结束：flush 最后一个 QA 和 section
-    _flush_qa(state, current_question, current_image, current_answers, current_section)
-    if current_section and current_section["questions"]:
+    # EOF flush
+    _commit_qa(state, current_qa, current_section)
+    if current_section and current_section.qas:
         sections.append(current_section)
 
     return sections
 
 
-def _flush_qa(state, question, image, answers, section):
-    """将积攒的 QA 数据写入 section。"""
-    if state == "in_answer" and question.strip() and answers:
-        if section is not None:
-            section["questions"].append({
-                "question": question.strip(),
-                "image_url": image,
-                "answers": answers,
-            })
-
-
-def _clean_question(text):
-    """整理 question 文本：去掉首尾空行，每行 trim。"""
-    lines = text.strip().splitlines()
-    return "\n".join(l.strip() for l in lines if l.strip())
+def _commit_qa(state, qa, section):
+    if state == "in_answer" and qa and qa.question and qa.answers:
+        if section:
+            section.qas.append(qa)
 
 
 # ═══════════════════════════════════════════════════════
@@ -212,7 +240,7 @@ def _clean_question(text):
 # ═══════════════════════════════════════════════════════
 
 def main():
-    # 1. 确定 batch.md 路径
+    # 1. 确定文件路径
     if len(sys.argv) > 1:
         md_path = sys.argv[1]
     else:
@@ -232,43 +260,54 @@ def main():
         print("✗ 未解析到任何题目，请检查 batch.md 格式。")
         sys.exit(1)
 
-    # 统计
-    total_q = sum(len(s["questions"]) for s in sections)
+    total_q = sum(len(s.qas) for s in sections)
     print(f"📊 解析完成: {len(sections)} 个题库, {total_q} 道题目\n")
 
-    # 3. 逐题库、逐题创建
-    ok_count = 0
-    fail_count = 0
+    # 3. 逐题库创建
+    ok = fail = 0
 
     for sec in sections:
-        bank_name = sec["bank_name"]
-        questions = sec["questions"]
-        print(f"── 题库: {bank_name} ({len(questions)} 题) ──")
+        print(f"── 题库: {sec.name} ({len(sec.qas)} 题) ──")
 
-        result = find_or_create_bank(bank_name)
+        result = find_or_create_bank(sec.name)
         if result is None:
-            print(f"  ✗ 题库「{bank_name}」创建失败，跳过该题库所有题目。")
-            fail_count += len(questions)
+            print(f"  ✗ 题库创建失败，跳过 {len(sec.qas)} 题")
+            fail += len(sec.qas)
             continue
         bank_id, _ = result
 
-        for i, q in enumerate(questions, 1):
-            label = f"  [{i}/{len(questions)}]"
-            q_text = q["question"].replace("\n", " / ")[:60]
-            success, info = create_qa(bank_id, q["question"], q["answers"], q.get("image_url"))
+        for i, qa in enumerate(sec.qas, 1):
+            label = f"  [{i}/{len(sec.qas)}]"
+            preview = qa.question.replace("\n", " / ")[:55]
+            extras = []
+            if qa.score != 0:
+                extras.append(f"score={qa.score}")
+            if qa.sort_order != 0:
+                extras.append(f"sort={qa.sort_order}")
+            if qa.tag_id:
+                extras.append(f"tags={','.join(qa.tag_id)}")
+            extra_str = f" ({', '.join(extras)})" if extras else ""
+
+            success, info = create_qa(
+                bank_id, qa.question, qa.answers,
+                sort_order=qa.sort_order,
+                score=qa.score,
+                tag_id=qa.tag_id,
+            )
             if success:
-                print(f"{label} ✓ {q_text}... (id={info})")
-                ok_count += 1
+                print(f"{label} ✓ {preview}...{extra_str} (id={info})")
+                ok += 1
             else:
-                print(f"{label} ✗ {q_text}... 失败")
-                fail_count += 1
+                print(f"{label} ✗ {preview}... 失败")
+                fail += 1
         print()
 
     # 4. 汇总
     print("═" * 50)
-    print(f"✅ 成功: {ok_count}")
-    print(f"❌ 失败: {fail_count}")
-    print(f"📝 合计: {ok_count + fail_count}")
+    print(f"✅ 成功: {ok}")
+    print(f"❌ 失败: {fail}")
+    print(f"📝 合计: {ok + fail}")
+    sys.exit(1 if fail > 0 else 0)
 
 
 if __name__ == "__main__":
