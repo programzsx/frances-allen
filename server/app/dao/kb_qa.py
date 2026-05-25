@@ -14,6 +14,9 @@ def _next_random_int(db: Session) -> int:
 
 
 def add(db: Session, data: dict) -> KbQa:
+    tag_id = data.get("tag_id")
+    if isinstance(tag_id, list):
+        tag_id = json.dumps(tag_id, ensure_ascii=False)
     row = KbQa(
         id=snowflake.generate_id(),
         create_time=data["create_time"],
@@ -24,7 +27,7 @@ def add(db: Session, data: dict) -> KbQa:
         random_int=_next_random_int(db),
         score=data.get("score", 0),
         category_id=data["category_id"],
-        tag_id=data.get("tag_id"),
+        tag_id=tag_id,
     )
     db.add(row)
     db.flush()
@@ -44,9 +47,11 @@ def update(db: Session, qa_id: str, data: dict) -> Optional[KbQa]:
     row = db.query(KbQa).filter(KbQa.id == qa_id).first()
     if not row:
         return None
+    # 只更新模型中实际存在的列，忽略 total/right/wrong 等前端临时统计字段
+    valid_columns = {c.name for c in row.__table__.columns}
     for key, value in data.items():
-        if value is not None:
-            if key == "answer" and isinstance(value, (list, dict)):
+        if value is not None and key in valid_columns:
+            if key in ("answer", "tag_id") and isinstance(value, (list, dict)):
                 value = json.dumps(value, ensure_ascii=False)
             setattr(row, key, value)
     db.flush()
@@ -98,9 +103,11 @@ def page_query(
     return items, total
 
 
-def random_query(db: Session, limit: int = 10, category_id: Optional[str] = None) -> list[KbQa]:
+def random_query(db: Session, limit: int = 10, category_id: Optional[str] = None, category_ids: Optional[list[str]] = None) -> list[KbQa]:
     query = db.query(KbQa)
-    if category_id:
+    if category_ids:
+        query = query.filter(KbQa.category_id.in_(category_ids))
+    elif category_id:
         query = query.filter(KbQa.category_id == category_id)
     return query.order_by(func.rand()).limit(limit).all()
 

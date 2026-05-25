@@ -15,6 +15,7 @@ def create_tag(db: Session, bo: TagCreateBO) -> dict:
         "create_time": now,
         "update_time": now,
         "name": bo.name,
+        "sort_order": bo.sort_order,
     }
     row = tag_dao.add(db, data)
     return _tag_to_dict(row)

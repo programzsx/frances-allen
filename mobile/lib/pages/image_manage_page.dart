@@ -7,6 +7,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/api_service.dart';
+import '../services/data_cache.dart';
 import 'package:http/http.dart' as http;
 import '../theme/app_theme.dart';
 
@@ -24,10 +25,12 @@ class _ImageManagePageState extends State<ImageManagePage> {
   bool _loading = true;
   bool _isGridView = false;
   final _searchCtrl = TextEditingController();
+  late DataCache _cache;
 
   @override
   void initState() {
     super.initState();
+    _cache = DataCache();
     _loadImages();
   }
 
@@ -38,10 +41,22 @@ class _ImageManagePageState extends State<ImageManagePage> {
   }
 
   Future<void> _loadImages({bool force = false}) async {
-    if (!force && _files.isNotEmpty && _dirs.isNotEmpty) return;
+    // 先检查缓存
+    if (!force) {
+      final cached = _cache.getCachedImages(_currentPrefix);
+      if (cached != null) {
+        setState(() {
+          _dirs = (cached['dirs'] as List).map((e) => Map<String, dynamic>.from(e)).toList();
+          _files = (cached['files'] as List).map((e) => Map<String, dynamic>.from(e)).toList();
+          _loading = false;
+        });
+        return;
+      }
+    }
     setState(() => _loading = true);
     try {
       final data = await ApiService.listImages(prefix: _currentPrefix);
+      _cache.cacheImages(_currentPrefix, data);
       setState(() {
         _dirs = (data['dirs'] as List).map((e) => Map<String, dynamic>.from(e)).toList();
         _files = (data['files'] as List).map((e) => Map<String, dynamic>.from(e)).toList();

@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
-import '../services/global_filter.dart';
+import '../services/data_cache.dart';
+import 'tag_detail_page.dart';
 import '../theme/app_theme.dart';
 
 class TagPage extends StatefulWidget {
@@ -13,6 +14,7 @@ class TagPage extends StatefulWidget {
 }
 
 class _TagPageState extends State<TagPage> {
+  late DataCache _cache;
   List<KbTag> _tags = [];
   Map<String, int> _tagCounts = {};
   bool _loading = true;
@@ -22,35 +24,52 @@ class _TagPageState extends State<TagPage> {
   @override
   void initState() {
     super.initState();
+    _cache = DataCache();
+    _cache.addListener(_onCacheUpdate);
     _loadData();
   }
 
+  @override
+  void dispose() {
+    _cache.removeListener(_onCacheUpdate);
+    super.dispose();
+  }
+
+  void _onCacheUpdate() {
+    if (_cache.hasTags && !_cache.tagsLoading) {
+      _loadCounts();
+    }
+  }
+
   Future<void> _loadData({bool force = false}) async {
-    if (!force && _tags.isNotEmpty) return;
-    setState(() => _loading = true);
-    try {
-      final tagData = await ApiService.pageTags(pageSize: 100);
-      final countData = await ApiService.getQaTagCounts();
-      if (tagData == null) {
-        throw Exception('标签列表为空');
-      }
+    if (!force && _cache.hasTags) {
       setState(() {
-        _tags = (tagData['items'] as List?)?.map((e) => KbTag.fromJson(e)).toList() ?? [];
-        _tagCounts = (countData as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v as int)) ?? {};
+        _tags = _cache.allTags;
         _loading = false;
       });
-    } catch (e) {
-      setState(() => _loading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('加载标签失败: $e'),
-            backgroundColor: AppTheme.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
+      _loadCounts();
+      return;
     }
+    setState(() => _loading = true);
+    await _cache.ensureTags();
+    if (mounted) {
+      setState(() {
+        _tags = _cache.allTags;
+        _loading = false;
+      });
+      _loadCounts();
+    }
+  }
+
+  Future<void> _loadCounts() async {
+    try {
+      final countData = await ApiService.getQaTagCounts();
+      if (mounted) {
+        setState(() {
+          _tagCounts = (countData as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v as int)) ?? {};
+        });
+      }
+    } catch (_) {}
   }
 
   void _onSearchChanged(String value) {
@@ -59,28 +78,11 @@ class _TagPageState extends State<TagPage> {
     });
   }
 
-  void _toggleTag(String tagId) {
-    setState(() {
-      if (_selectedTagIds.contains(tagId)) {
-        _selectedTagIds.remove(tagId);
-      } else {
-        _selectedTagIds.add(tagId);
-      }
-    });
-  }
-
-  void _clearSelection() {
-    setState(() {
-      _selectedTagIds.clear();
-    });
-  }
-
   List<KbTag> get _filteredTags {
     var tags = _tags;
     if (_searchText.isNotEmpty) {
       tags = tags.where((t) => t.name.toLowerCase().contains(_searchText.toLowerCase())).toList();
     }
-    // Sort by count descending
     tags.sort((a, b) {
       final countA = _tagCounts[a.id] ?? 0;
       final countB = _tagCounts[b.id] ?? 0;
@@ -91,8 +93,9 @@ class _TagPageState extends State<TagPage> {
 
   Future<void> _showTagDialog({KbTag? tag}) async {
     final nameCtrl = TextEditingController(text: tag?.name);
+    final sortCtrl = TextEditingController(text: (tag?.sortOrder ?? 0).toString());
 
-    final result = await showDialog<String>(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
@@ -100,26 +103,43 @@ class _TagPageState extends State<TagPage> {
           return AlertDialog(
             title: Text(
               tag == null ? '新增标签' : '编辑标签',
-              style: TextStyle(
-                fontSize: 16.sp,
-                fontWeight: FontWeight.w600,
-                fontFamily: 'Inter',
-                color: AppTheme.textPrimary,
-              ),
+              style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w600, fontFamily: 'Inter', color: AppTheme.textPrimary),
             ),
-            content: TextField(
-              controller: nameCtrl,
-              onChanged: (_) => setDialogState(() {}),
-              decoration: const InputDecoration(
-                labelText: '标签名称',
-                prefixIcon: Icon(Icons.label_outlined),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    onChanged: (_) => setDialogState(() {}),
+                    decoration: const InputDecoration(
+                      labelText: '标签名称',
+                      prefixIcon: Icon(Icons.label_outlined),
+                    ),
+                    autofocus: true,
+                  ),
+                  SizedBox(height: 16.h),
+                  TextField(
+                    controller: sortCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '排序值',
+                      prefixIcon: Icon(Icons.sort_outlined),
+                      hintText: '0',
+                    ),
+                  ),
+                ],
               ),
-              autofocus: true,
             ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
               TextButton(
-                onPressed: nameCtrl.text.isEmpty ? null : () => Navigator.pop(ctx, nameCtrl.text),
+                onPressed: nameEmpty
+                    ? null
+                    : () => Navigator.pop(ctx, {
+                        'name': nameCtrl.text,
+                        'sort_order': int.tryParse(sortCtrl.text) ?? 0,
+                      }),
                 child: const Text('确定', style: TextStyle(fontWeight: FontWeight.w600)),
               ),
             ],
@@ -128,12 +148,17 @@ class _TagPageState extends State<TagPage> {
       ),
     );
 
-    if (result != null && result.isNotEmpty) {
+    if (result != null && result['name'] != null && (result['name'] as String).isNotEmpty) {
+      final data = {
+        'name': result['name'],
+        'sort_order': result['sort_order'],
+      };
       if (tag == null) {
-        await ApiService.createTag({'name': result});
+        await ApiService.createTag(data);
       } else {
-        await ApiService.updateTag(tag.id, {'name': result});
+        await ApiService.updateTag(tag.id, data);
       }
+      _cache.invalidate();
       _loadData(force: true);
     }
   }
@@ -152,6 +177,7 @@ class _TagPageState extends State<TagPage> {
     );
     if (result == true) {
       await ApiService.deleteTag(tag.id);
+      _cache.invalidate();
       _loadData(force: true);
     }
   }
@@ -162,7 +188,6 @@ class _TagPageState extends State<TagPage> {
       appBar: AppBar(title: const Text('标签管理')),
       body: Column(
         children: [
-          // Search bar
           Padding(
             padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 8.h),
             child: TextField(
@@ -190,68 +215,6 @@ class _TagPageState extends State<TagPage> {
               onChanged: _onSearchChanged,
             ),
           ),
-
-          // Selected filter chips
-          if (_selectedTagIds.isNotEmpty)
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 16.w),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        '已选 ${_selectedTagIds.length} 个标签',
-                        style: TextStyle(
-                          fontSize: 12.sp,
-                          color: AppTheme.textTertiary,
-                          fontFamily: 'Inter',
-                        ),
-                      ),
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: _clearSelection,
-                        child: Text(
-                          '清除',
-                          style: TextStyle(
-                            fontSize: 12.sp,
-                            color: AppTheme.primary,
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 8.h),
-                  SizedBox(
-                    height: 32.h,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _selectedTagIds.length,
-                      separatorBuilder: (_, __) => SizedBox(width: 8.w),
-                      itemBuilder: (context, index) {
-                        final tagId = _selectedTagIds.elementAt(index);
-                        final tag = _tags.firstWhere((t) => t.id == tagId);
-                        return Chip(
-                          label: Text(tag.name, style: TextStyle(fontSize: 12.sp, fontFamily: 'Inter')),
-                          backgroundColor: AppTheme.primary.withAlpha(30),
-                          side: BorderSide.none,
-                          padding: EdgeInsets.zero,
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          deleteIcon: const Icon(Icons.close, size: 16),
-                          onDeleted: () => _toggleTag(tagId),
-                        );
-                      },
-                    ),
-                  ),
-                  SizedBox(height: 8.h),
-                  const Divider(height: 1),
-                ],
-              ),
-            ),
-
-          // Tag list
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -280,18 +243,14 @@ class _TagPageState extends State<TagPage> {
                         itemBuilder: (context, index) {
                           final tag = _filteredTags[index];
                           final count = _tagCounts[tag.id] ?? 0;
-                          final isSelected = _selectedTagIds.contains(tag.id);
 
                           return InkWell(
-                            onTap: () {
-                              final tag = _filteredTags[index];
-                              GlobalQuestionFilter.setTag(tag.id);
-                            },
-                            onLongPress: () => _showTagDialog(tag: tag),
+                            onTap: () => Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => TagDetailPage(tag: tag),
+                            )),
                             child: Container(
                               padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
                               decoration: BoxDecoration(
-                                color: isSelected ? AppTheme.primary.withAlpha(20) : Colors.transparent,
                                 border: Border(
                                   bottom: BorderSide(color: AppTheme.border.withAlpha(100), width: 0.5),
                                 ),
@@ -302,7 +261,7 @@ class _TagPageState extends State<TagPage> {
                                     width: 36.w,
                                     height: 36.w,
                                     decoration: BoxDecoration(
-                                      color: isSelected ? AppTheme.primary : AppTheme.primary.withAlpha(50),
+                                      color: AppTheme.primary.withAlpha(50),
                                       borderRadius: BorderRadius.circular(8.r),
                                     ),
                                     child: Center(
@@ -343,7 +302,30 @@ class _TagPageState extends State<TagPage> {
                                       ],
                                     ),
                                   ),
-                                  Icon(Icons.chevron_right, color: AppTheme.textTertiary, size: 22.sp),
+                                  // 编辑按钮
+                                  GestureDetector(
+                                    onTap: () => _showTagDialog(tag: tag),
+                                    child: Container(
+                                      padding: EdgeInsets.all(8.w),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.indigo50,
+                                        borderRadius: BorderRadius.circular(8.r),
+                                      ),
+                                      child: Icon(Icons.edit_note, color: AppTheme.primary, size: 18.sp),
+                                    ),
+                                  ),
+                                  SizedBox(width: 4.w),
+                                  // 删除按钮
+                                  SizedBox(
+                                    width: 32.w,
+                                    height: 32.w,
+                                    child: IconButton(
+                                      icon: const Icon(Icons.delete_outline, color: AppTheme.red, size: 16),
+                                      onPressed: () => _deleteTag(tag),
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),

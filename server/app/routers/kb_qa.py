@@ -14,9 +14,13 @@ router = APIRouter(prefix="/api/qas", tags=["题目管理"])
 def random_qa(
     limit: int = Query(10, ge=1, le=100),
     category_id: Optional[str] = Query(None),
+    category_ids: Optional[str] = Query(None, description="逗号分隔的多个题库ID"),
     db: Session = Depends(get_db),
 ):
-    return qa_service.random_qa(db, limit, category_id)
+    ids_list = None
+    if category_ids:
+        ids_list = [x.strip() for x in category_ids.split(",") if x.strip()]
+    return qa_service.random_qa(db, limit, category_id, ids_list)
 
 
 @router.get("/sequential/list", summary="顺序获取题目")

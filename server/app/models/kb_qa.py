@@ -21,5 +21,5 @@ class KbQa(Base):
     score = Column(Integer, nullable=False, default=0, comment="掌握程度 -1/0/1")
 
     # 关联字段
-    category_id = Column(String(64), nullable=False, comment="所属知识分类ID")
+    category_id = Column(String(64), nullable=True, comment="所属知识分类ID")
     tag_id = Column(String(64), nullable=True, comment="标签ID")

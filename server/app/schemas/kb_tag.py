@@ -6,10 +6,12 @@ from pydantic import BaseModel, Field
 
 class TagCreateBO(BaseModel):
     name: str = Field(..., max_length=128, description="标签名称")
+    sort_order: int = Field(0, description="排序值")
 
 
 class TagUpdateBO(BaseModel):
     name: Optional[str] = Field(None, max_length=128, description="标签名称")
+    sort_order: Optional[int] = Field(None, description="排序值")
 
 
 class TagBatchGetBO(BaseModel):
@@ -23,5 +25,6 @@ class TagVO(BaseModel):
     create_time: str
     update_time: str
     name: str
+    sort_order: int = 0
 
     model_config = {"from_attributes": True}

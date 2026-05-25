@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text
+from sqlalchemy import Column, String, Text, Integer
 
 from app.database import Base
 
@@ -13,3 +13,6 @@ class KbTag(Base):
 
     # 业务字段
     name = Column(String(128), nullable=False, comment="标签名称")
+
+    # 统计字段
+    sort_order = Column(Integer, nullable=False, default=0, comment="排序值")

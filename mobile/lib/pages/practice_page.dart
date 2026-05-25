@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -20,68 +19,86 @@ class _PracticePageState extends State<PracticePage> {
   // Setup state
   KbBank? _selectedBank;
   PracticeMode _mode = PracticeMode.random;
-  int _minWrong = 1;
+  int _minScore = 0;
   bool _loading = false;
   int _bankTotal = 0;
 
-  // Search state
-  final _searchCtrl = TextEditingController();
-  final _searchKey = GlobalKey();
-  List<KbBank> _searchResults = [];
-  bool _searching = false;
-  Timer? _debounce;
-  OverlayEntry? _searchOverlay;
+  // Bank drill-down state
+  List<KbBank> _bankTree = [];
+  List<KbBank> _drillPath = [];
+  bool _treeLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _searchCtrl.addListener(_onSearchChanged);
+    _loadBankTree();
   }
 
   @override
   void dispose() {
-    _searchCtrl.dispose();
-    _debounce?.cancel();
     super.dispose();
   }
 
-  void _onSearchChanged() {
-    _debounce?.cancel();
-    final query = _searchCtrl.text.trim();
-    if (query.isEmpty) {
-      setState(() {
-        _searchResults = [];
-        _searching = false;
-      });
-      _removeOverlay();
-      return;
-    }
-    _debounce = Timer(const Duration(milliseconds: 300), () async {
-      try {
-        final data = await ApiService.pageBanks(keyword: query, pageSize: 20);
-        final banks = (data['items'] as List).map((e) => KbBank.fromJson(e)).toList();
-        if (mounted) {
-          setState(() {
-            _searchResults = banks;
-            _searching = false;
-          });
-          if (banks.isNotEmpty || _searching) _showSearchOverlay();
-        }
-      } catch (_) {
-        if (mounted) setState(() => _searching = false);
+  Future<void> _loadBankTree() async {
+    try {
+      final data = await ApiService.getBankTree();
+      if (mounted) {
+        setState(() {
+          _bankTree = data.map((e) => KbBank.fromJson(e)).toList();
+          _treeLoading = false;
+        });
       }
+    } catch (_) {
+      if (mounted) setState(() => _treeLoading = false);
+    }
+  }
+
+  /// 当前展示的银行列表（根或某层的 children）
+  List<KbBank> get _currentBanks {
+    if (_drillPath.isEmpty) return _bankTree;
+    return _drillPath.last.children;
+  }
+
+  /// 下钻到子题库
+  void _drillInto(KbBank bank) {
+    setState(() {
+      _drillPath.add(bank);
     });
   }
 
+  /// 面包屑回退到某个位置
+  void _drillBackTo(int index) {
+    setState(() {
+      _drillPath = _drillPath.sublist(0, index + 1);
+    });
+  }
+
+  /// 回退到根
+  void _drillBackToRoot() {
+    setState(() {
+      _drillPath.clear();
+    });
+  }
+
+  /// 选中当前层级题库作为练习目标
+  void _selectCurrentLevelBank() {
+    final bank = _drillPath.isNotEmpty ? _drillPath.last : null;
+    if (bank == null) return;
+    _selectBank(bank);
+  }
+
   void _selectBank(KbBank bank) {
-    _searchCtrl.clear();
-    _removeOverlay();
     setState(() {
       _selectedBank = bank;
-      _searchResults = [];
-      _bankTotal = 0;
     });
     _loadBankTotal(bank);
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectedBank = null;
+      _bankTotal = 0;
+    });
   }
 
   Future<void> _loadBankTotal(KbBank bank) async {
@@ -89,56 +106,6 @@ class _PracticePageState extends State<PracticePage> {
       final data = await ApiService.pageQas(categoryId: bank.id, pageSize: 1);
       if (mounted) setState(() => _bankTotal = data['total']);
     } catch (_) {}
-  }
-
-  void _showSearchOverlay() {
-    _removeOverlay();
-    final context = _searchKey.currentContext;
-    if (context == null) return;
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null) return;
-    final offset = box.localToGlobal(Offset.zero);
-    final size = box.size;
-
-    _searchOverlay = OverlayEntry(
-      builder: (ctx) => Positioned(
-        left: offset.dx,
-        top: offset.dy + size.height + 8.h,
-        width: size.width,
-        child: Material(
-          elevation: 4,
-          borderRadius: BorderRadius.circular(10.r),
-          child: Container(
-            constraints: BoxConstraints(maxHeight: 200.h),
-            decoration: BoxDecoration(
-              color: AppTheme.bgCard,
-              borderRadius: BorderRadius.circular(10.r),
-              border: Border.all(color: AppTheme.border),
-            ),
-            child: _searching
-                ? const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()))
-                : ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: _searchResults.length,
-                    itemBuilder: (ctx, i) {
-                      final bank = _searchResults[i];
-                      return ListTile(
-                        dense: true,
-                        title: Text(bank.name, style: TextStyle(fontSize: 14.sp, fontFamily: 'Inter')),
-                        onTap: () { _selectBank(bank); _removeOverlay(); },
-                      );
-                    },
-                  ),
-          ),
-        ),
-      ),
-    );
-    Overlay.of(context, rootOverlay: true).insert(_searchOverlay!);
-  }
-
-  void _removeOverlay() {
-    _searchOverlay?.remove();
-    _searchOverlay = null;
   }
 
   Future<void> _startPractice() async {
@@ -153,10 +120,13 @@ class _PracticePageState extends State<PracticePage> {
         case PracticeMode.random:
           data = await ApiService.getAllQasForBank(categoryId: _selectedBank!.id);
           data = List.from(data)..shuffle(Random());
+          break;
         case PracticeMode.sequential:
           data = await ApiService.getAllQasForBank(categoryId: _selectedBank!.id);
+          break;
         case PracticeMode.wrong:
-          data = await ApiService.wrongQas(limit: 9999, categoryId: _selectedBank!.id, minWrong: _minWrong);
+          data = await ApiService.wrongQas(limit: 9999, categoryId: _selectedBank!.id, minScore: _minScore);
+          break;
       }
 
       final qas = data.map((e) => KbQa.fromJson(e)).toList();
@@ -194,10 +164,7 @@ class _PracticePageState extends State<PracticePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: (_) => _removeOverlay(),
-          child: SingleChildScrollView(
+        child: SingleChildScrollView(
             padding: EdgeInsets.all(20.w),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -218,13 +185,13 @@ class _PracticePageState extends State<PracticePage> {
                 ),
                 SizedBox(height: 8.h),
                 Center(
-                  child: Text('选择题库并设置练习模式', style: TextStyle(fontSize: 12.sp, color: AppTheme.textTertiary)),
+                  child: Text('逐层选择题库', style: TextStyle(fontSize: 12.sp, color: AppTheme.textTertiary)),
                 ),
                 SizedBox(height: 28.h),
 
                 Text('选择题库', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.sp, fontFamily: 'Inter', color: AppTheme.textPrimary)),
                 SizedBox(height: 8.h),
-                _buildBankSearch(),
+                _buildBankDrilldown(),
                 SizedBox(height: 24.h),
 
                 Text('练习模式', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.sp, fontFamily: 'Inter', color: AppTheme.textPrimary)),
@@ -257,76 +224,215 @@ class _PracticePageState extends State<PracticePage> {
             ),
           ),
         ),
+    );
+  }
+
+  Widget _buildBankDrilldown() {
+    if (_treeLoading) {
+      return Container(
+        padding: EdgeInsets.all(24.h),
+        decoration: BoxDecoration(
+          color: AppTheme.bgCard,
+          borderRadius: BorderRadius.circular(10.r),
+          border: Border.all(color: AppTheme.border),
+        ),
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final currentBanks = _currentBanks;
+    final hasSelected = _selectedBank != null;
+
+    return Container(
+      padding: EdgeInsets.all(14.w),
+      decoration: BoxDecoration(
+        color: AppTheme.bgCard,
+        borderRadius: BorderRadius.circular(10.r),
+        border: Border.all(color: hasSelected ? AppTheme.primary : AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 面包屑导航
+          _buildBreadcrumb(),
+
+          // 空状态
+          if (currentBanks.isEmpty && _drillPath.isEmpty)
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 16.h),
+              child: Center(
+                child: Text('暂无题库，请先创建', style: TextStyle(color: AppTheme.textTertiary, fontSize: 13.sp)),
+              ),
+            ),
+
+          // 银行网格
+          if (currentBanks.isNotEmpty) ...[
+            SizedBox(height: 12.h),
+            Wrap(
+              spacing: 8.w,
+              runSpacing: 8.h,
+              children: currentBanks.map((bank) => _buildBankChip(bank)).toList(),
+            ),
+          ],
+
+          // 选中当前层级题库的提示
+          if (_drillPath.isNotEmpty && (_selectedBank == null || _selectedBank!.id != _drillPath.last.id)) ...[
+            SizedBox(height: 12.h),
+            GestureDetector(
+              onTap: _selectCurrentLevelBank,
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+                decoration: BoxDecoration(
+                  color: AppTheme.indigo50,
+                  borderRadius: BorderRadius.circular(8.r),
+                  border: Border.all(color: AppTheme.indigo100),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.check_circle_outline, size: 16.sp, color: AppTheme.primary),
+                    SizedBox(width: 6.w),
+                    Text(
+                      '选择「${_drillPath.last.name}」',
+                      style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w600, color: AppTheme.primary, fontFamily: 'Inter'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+
+          // 已选中的题库信息
+          if (hasSelected) ...[
+            SizedBox(height: 12.h),
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+              decoration: BoxDecoration(
+                color: AppTheme.indigo50,
+                borderRadius: BorderRadius.circular(8.r),
+                border: Border.all(color: AppTheme.indigo100),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.folder, size: 16.sp, color: AppTheme.primary),
+                  SizedBox(width: 6.w),
+                  Expanded(
+                    child: Text(
+                      _selectedBank!.name,
+                      style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w600, color: AppTheme.textPrimary, fontFamily: 'Inter'),
+                    ),
+                  ),
+                  if (_bankTotal > 0)
+                    Text('$_bankTotal 题', style: TextStyle(fontSize: 12.sp, color: AppTheme.textTertiary)),
+                  SizedBox(width: 4.w),
+                  GestureDetector(
+                    onTap: _clearSelection,
+                    child: Icon(Icons.close, size: 16.sp, color: AppTheme.textTertiary),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
 
-  Widget _buildBankSearch() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  /// 面包屑
+  Widget _buildBreadcrumb() {
+    if (_drillPath.isEmpty) return const SizedBox.shrink();
+
+    return Wrap(
+      spacing: 4.w,
+      runSpacing: 4.h,
       children: [
-        TextField(
-          key: _searchKey,
-          controller: _searchCtrl,
-          onTap: () {
-            if (_searchCtrl.text.trim().isNotEmpty) _showSearchOverlay();
-          },
-          decoration: InputDecoration(
-            hintText: '输入题库名称搜索',
-            hintStyle: TextStyle(fontSize: 13, color: AppTheme.textTertiary, fontFamily: 'Inter'),
-            prefixIcon: const Icon(Icons.search_rounded, size: 18),
-            suffixIcon: _selectedBank != null
-                ? IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () {
-                    setState(() { _selectedBank = null; _bankTotal = 0; });
-                  })
-                : null,
-            filled: true,
-            fillColor: AppTheme.bgCard,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10.r),
-              borderSide: const BorderSide(color: AppTheme.border),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10.r),
-              borderSide: const BorderSide(color: AppTheme.border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10.r),
-              borderSide: const BorderSide(color: AppTheme.primary, width: 2),
-            ),
-            contentPadding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
-          ),
-          style: TextStyle(fontSize: 14, fontFamily: 'Inter'),
-        ),
-        if (_selectedBank != null) ...[
-          SizedBox(height: 8.h),
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
-            decoration: BoxDecoration(
-              color: AppTheme.indigo50,
-              borderRadius: BorderRadius.circular(8.r),
-              border: Border.all(color: AppTheme.indigo100),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.folder, size: 16.sp, color: AppTheme.primary),
-                SizedBox(width: 6.w),
-                Expanded(
-                  child: Text(
-                    _selectedBank!.name,
-                    style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w600, color: AppTheme.textPrimary, fontFamily: 'Inter'),
-                  ),
-                ),
-                if (_bankTotal > 0)
-                  Text(
-                    '$_bankTotal 题',
-                    style: TextStyle(fontSize: 12.sp, color: AppTheme.textTertiary),
-                  ),
-              ],
-            ),
+        _breadcrumbChip('全部', onTap: _drillBackToRoot),
+        for (int i = 0; i < _drillPath.length; i++) ...[
+          Icon(Icons.chevron_right, size: 16.sp, color: AppTheme.textTertiary),
+          _breadcrumbChip(
+            _drillPath[i].name,
+            isLast: i == _drillPath.length - 1,
+            onTap: () => _drillBackTo(i),
           ),
         ],
       ],
+    );
+  }
+
+  Widget _breadcrumbChip(String label, {bool isLast = false, VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+        decoration: BoxDecoration(
+          color: isLast ? AppTheme.primary : AppTheme.bgSection,
+          borderRadius: BorderRadius.circular(6.r),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12.sp,
+            color: isLast ? Colors.white : AppTheme.textSecondary,
+            fontWeight: isLast ? FontWeight.w600 : FontWeight.normal,
+            fontFamily: 'Inter',
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 单个题库卡片
+  Widget _buildBankChip(KbBank bank) {
+    final hasChildren = bank.children.isNotEmpty;
+    final isSelected = _selectedBank?.id == bank.id;
+
+    return GestureDetector(
+      onTap: () {
+        if (hasChildren) {
+          _drillInto(bank);
+        } else {
+          _selectBank(bank);
+        }
+      },
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 10.h),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.primary : Colors.white,
+          borderRadius: BorderRadius.circular(10.r),
+          border: Border.all(
+            color: isSelected ? AppTheme.primary : (hasChildren ? AppTheme.indigo100 : AppTheme.border),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              hasChildren ? Icons.folder_outlined : Icons.description_outlined,
+              size: 16.sp,
+              color: isSelected ? Colors.white : (hasChildren ? AppTheme.primary : AppTheme.textTertiary),
+            ),
+            SizedBox(width: 6.w),
+            Text(
+              bank.name,
+              style: TextStyle(
+                fontSize: 13.sp,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                color: isSelected ? Colors.white : AppTheme.textPrimary,
+                fontFamily: 'Inter',
+              ),
+            ),
+            if (hasChildren) ...[
+              SizedBox(width: 4.w),
+              Icon(
+                Icons.chevron_right,
+                size: 16.sp,
+                color: isSelected ? Colors.white70 : AppTheme.textTertiary,
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -399,7 +505,7 @@ class _PracticePageState extends State<PracticePage> {
                   borderRadius: BorderRadius.circular(12.r),
                 ),
                 child: Text(
-                  '>= $_minWrong',
+                  '>= $_minScore',
                   style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold, fontSize: 13.sp, fontFamily: 'Inter'),
                 ),
               ),
@@ -407,14 +513,14 @@ class _PracticePageState extends State<PracticePage> {
           ),
           SizedBox(height: 8.h),
           Slider(
-            value: _minWrong.toDouble(),
-            min: 1,
-            max: 10,
-            divisions: 9,
-            label: '>= $_minWrong',
-            onChanged: (v) => setState(() => _minWrong = v.toInt()),
+            value: _minScore.toDouble(),
+            min: -1,
+            max: 1,
+            divisions: 2,
+            label: '>= $_minScore',
+            onChanged: (v) => setState(() => _minScore = v.toInt()),
           ),
-          Text('筛选错误次数大于等于 $_minWrong 次的题目', style: TextStyle(color: AppTheme.textTertiary, fontSize: 12.sp)),
+          Text('筛选掌握程度 <= $_minScore 的题目 (-1=不会, 0=模糊, 1=掌握)', style: TextStyle(color: AppTheme.textTertiary, fontSize: 12.sp)),
         ],
       ),
     );

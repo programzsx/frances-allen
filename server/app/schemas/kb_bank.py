@@ -7,11 +7,13 @@ from pydantic import BaseModel, Field
 class BankCreateBO(BaseModel):
     name: str = Field(..., max_length=128, description="题库名称")
     parent_id: Optional[str] = Field(None, description="父题库ID")
+    sort_order: int = Field(0, description="排序值")
 
 
 class BankUpdateBO(BaseModel):
     name: Optional[str] = Field(None, max_length=128, description="题库名称")
     parent_id: Optional[str] = Field(None, description="父题库ID")
+    sort_order: Optional[int] = Field(None, description="排序值")
 
 
 # ============ VO（视图输出）===========
@@ -22,6 +24,7 @@ class BankVO(BaseModel):
     update_time: str
     name: str
     parent_id: Optional[str] = None
+    sort_order: int = 0
 
     model_config = {"from_attributes": True}
 

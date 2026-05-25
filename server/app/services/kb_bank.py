@@ -16,6 +16,7 @@ def create_bank(db: Session, bo: BankCreateBO) -> dict:
         "update_time": now,
         "name": bo.name,
         "parent_id": bo.parent_id,
+        "sort_order": bo.sort_order,
     }
     # 校验 parent_id 存在
     if bo.parent_id:
@@ -94,6 +95,16 @@ def get_bank_tree(db: Session) -> list[dict]:
         else:
             tree.append(d)
     return tree
+
+
+def get_question_counts(db: Session) -> dict[str, int]:
+    """返回 {bank_id: question_count} 的批量统计（仅直接题目）"""
+    return bank_dao.question_counts(db)
+
+
+def get_descendant_counts(db: Session) -> dict[str, int]:
+    """返回 {bank_id: total_question_count} 的批量统计（含所有后代聚合）"""
+    return bank_dao.descendant_counts(db)
 
 
 def _bank_to_dict(row) -> dict:

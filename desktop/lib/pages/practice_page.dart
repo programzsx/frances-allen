@@ -20,7 +20,7 @@ class _PracticePageState extends State<PracticePage> {
   PracticeModeType _modeType = PracticeModeType.random;
   String? _categoryId;
   SubMode _subMode = SubMode.random;
-  int _minWrong = 1;
+  int _minScore = 0;
   List<KbBank> _banks = [];
   Map<String, KbBank> _categoryMap = {};
   bool _loading = false;
@@ -57,17 +57,23 @@ class _PracticePageState extends State<PracticePage> {
       switch (_modeType) {
         case PracticeModeType.random:
           data = await ApiService.randomQas(limit: 10);
+          break;
         case PracticeModeType.bank:
           switch (_subMode) {
             case SubMode.sequential:
               data = await ApiService.sequentialQas(limit: 10, categoryId: _categoryId);
+              break;
             case SubMode.random:
               data = await ApiService.randomQas(limit: 10, categoryId: _categoryId);
+              break;
             case SubMode.wrong:
-              data = await ApiService.wrongQas(limit: 10, categoryId: _categoryId, minWrong: _minWrong);
+              data = await ApiService.wrongQas(limit: 10, categoryId: _categoryId, minScore: _minScore);
+              break;
           }
+          break;
         case PracticeModeType.wrong:
-          data = await ApiService.wrongQas(limit: 10, minWrong: _minWrong);
+          data = await ApiService.wrongQas(limit: 10, minScore: _minScore);
+          break;
       }
 
       final qas = data.map((e) => KbQa.fromJson(e)).toList();
@@ -454,21 +460,21 @@ class _PracticePageState extends State<PracticePage> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                '>= $_minWrong',
+                '>= $_minScore',
                 style: const TextStyle(color: DesktopTheme.primary, fontWeight: FontWeight.bold, fontSize: 13),
               ),
             ),
           ],
         ),
         Slider(
-          value: _minWrong.toDouble(),
-          min: 1,
-          max: 10,
-          divisions: 9,
-          label: '>= $_minWrong',
-          onChanged: (v) => setState(() => _minWrong = v.toInt()),
+          value: _minScore.toDouble(),
+          min: -1,
+          max: 1,
+          divisions: 2,
+          label: '>= $_minScore',
+          onChanged: (v) => setState(() => _minScore = v.toInt()),
         ),
-        Text('筛选错误次数大于等于 $_minWrong 次的题目', style: const TextStyle(color: DesktopTheme.textTertiary, fontSize: 12)),
+        Text('筛选掌握程度 <= $_minScore 的题目 (-1=不会, 0=模糊, 1=掌握)', style: const TextStyle(color: DesktopTheme.textTertiary, fontSize: 12)),
       ],
     );
   }

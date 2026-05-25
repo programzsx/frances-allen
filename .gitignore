@@ -220,3 +220,7 @@ __marimo__/
 # Sensitive design files
 zsx-design.md
 design/zsx-design.md
+
+# Build artifacts
+*.apk
+*.tar.gz

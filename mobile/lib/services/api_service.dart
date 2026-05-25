@@ -120,6 +120,28 @@ class ApiService {
     return jsonDecode(resp.body);
   }
 
+  static Future<Map<String, int>> getBankQuestionCounts() async {
+    try {
+      final resp = await http.get(Uri.parse('$baseUrl/api/banks/question-counts'));
+      _checkError(resp);
+      final raw = jsonDecode(resp.body) as Map<String, dynamic>;
+      return raw.map((k, v) => MapEntry(k, v as int));
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, int>> getDescendantCounts() async {
+    try {
+      final resp = await http.get(Uri.parse('$baseUrl/api/banks/descendant-counts'));
+      _checkError(resp);
+      final raw = jsonDecode(resp.body) as Map<String, dynamic>;
+      return raw.map((k, v) => MapEntry(k, v as int));
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   // ============ 标签 ============
 
   static Future<Map<String, dynamic>> createTag(Map<String, dynamic> data) async {
@@ -293,10 +315,14 @@ class ApiService {
   static Future<List<dynamic>> randomQas({
     int limit = 10,
     String? categoryId,
+    List<String>? categoryIds,
   }) async {
     try {
       final params = <String, String>{'limit': limit.toString()};
       if (categoryId != null) params['category_id'] = categoryId;
+      if (categoryIds != null && categoryIds.isNotEmpty) {
+        params['category_ids'] = categoryIds.join(',');
+      }
       final resp = await http.get(
         Uri.parse('$baseUrl/api/qas/random/list').replace(queryParameters: params),
       );
@@ -349,12 +375,12 @@ class ApiService {
   static Future<List<dynamic>> wrongQas({
     int limit = 10,
     String? categoryId,
-    int minWrong = 1,
+    int minScore = 0,
   }) async {
     try {
       final params = <String, String>{
         'limit': limit.toString(),
-        'min_wrong': minWrong.toString(),
+        'min_score': minScore.toString(),
       };
       if (categoryId != null) params['category_id'] = categoryId;
       final resp = await http.get(

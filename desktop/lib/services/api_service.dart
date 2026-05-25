@@ -328,12 +328,12 @@ class ApiService {
   static Future<List<dynamic>> wrongQas({
     int limit = 10,
     String? categoryId,
-    int minWrong = 1,
+    int minScore = 0,
   }) async {
     try {
       final params = <String, String>{
         'limit': limit.toString(),
-        'min_wrong': minWrong.toString(),
+        'min_score': minScore.toString(),
       };
       if (categoryId != null) params['category_id'] = categoryId;
       final resp = await http.get(

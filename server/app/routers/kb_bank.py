@@ -44,3 +44,13 @@ def page_bank(
 @router.get("/tree", summary="题库树形结构")
 def bank_tree(db: Session = Depends(get_db)):
     return bank_service.get_bank_tree(db)
+
+
+@router.get("/question-counts", summary="各题库题目数量统计（仅直接题目）")
+def bank_question_counts(db: Session = Depends(get_db)):
+    return bank_service.get_question_counts(db)
+
+
+@router.get("/descendant-counts", summary="各题库题目数量统计（含所有后代聚合）")
+def bank_descendant_counts(db: Session = Depends(get_db)):
+    return bank_service.get_descendant_counts(db)

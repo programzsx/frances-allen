@@ -13,6 +13,7 @@ def add(db: Session, data: dict) -> KbTag:
         create_time=data["create_time"],
         update_time=data["update_time"],
         name=data["name"],
+        sort_order=data.get("sort_order", 0),
     )
     db.add(row)
     db.flush()

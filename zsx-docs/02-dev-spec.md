@@ -253,6 +253,75 @@ OSS配置：
 
 ---
 
+## 7. 状态管理设计
+
+### 核心原则
+
+APP 内所有页面必须具备跨页面状态保持能力。用户在同一会话内离开页面再返回，页面状态应与离开时一致，不应重新加载数据或重置滚动位置。只有 APP 完全退出后重新进入，状态才应重建。
+
+### 页面分类
+
+#### A 类：底部导航页（IndexedStack 自动保持）
+
+`HomePage` 使用 `IndexedStack` 包裹 `PracticePage` 和 `QaPage`。`IndexedStack` 保留所有子 Widget 的 State，切换 Tab 不会触发 `initState` 重建。
+
+- **练习页**：State 自然保持，无需额外处理
+- **考试页**：State 自然保持；从题库/标签管理返回后通过 `.then()` 回调触发 `_fetchMeta()` + `_fetch()` 刷新题目列表，属于预期的主动刷新
+
+#### B 类：管理页面（DataCache 单例缓存）
+
+`BankPage`、`TagPage`、`ImageManagePage` 通过 `Navigator.push` 进入，每次进入创建新 State 实例。使用全局单例 `DataCache` 解决状态丢失问题。
+
+**DataCache 设计**：
+
+```
+DataCache (ChangeNotifier 单例)
+├── ensureBanks()    → 并行请求 banks + tree + counts
+├── ensureTags()     → 请求 tags
+├── getCachedImages(prefix) / cacheImages(prefix, data)
+└── invalidate()     → 清除所有缓存，通知监听者刷新
+```
+
+**页面使用模式**：
+
+```
+initState:
+  _cache = DataCache()
+  _cache.addListener(_onCacheUpdate)  ← 监听缓存变化
+  if _cache.hasBanks → 直接渲染缓存数据
+  else               → _cache.ensureBanks() → 渲染
+
+dispose:
+  _cache.removeListener(_onCacheUpdate)
+
+_onCacheUpdate:
+  if _cache.hasBanks → _buildFlatList()  ← 被动刷新
+```
+
+**缓存失效策略**：
+- 增/删/改操作成功后 → `_cache.invalidate()` → `_loadXxx(force: true)`
+- 仅清除对应数据，不影响其他页面缓存
+- 图片缓存按 prefix 分桶，删除/上传后仅失效该目录
+
+#### C 类：详情/表单页（无需缓存）
+
+`QaDetailPage`、`QaFormPage` 每次进入都是全新的上下文（题目ID不同），无需缓存，始终即时请求。
+
+#### D 类：特殊页面
+
+- **DailyQuizPage**：初始路由，先进入题库选择页（展示根题库 + 后代聚合题数），选库后进入答题。完成后 `pushReplacementNamed('/home')`，不可返回
+- **PracticeQuizPage**：从 PracticePage push 进入，练习上下文随 session
+
+### 数据请求原则
+
+- **首次进入页面**：检查 DataCache，缓存命中则直接渲染（无 loading 态），缓存未命中则显示 loading + 请求
+- **再次进入页面**：DataCache 命中 → 瞬间渲染，无网络请求
+- **修改数据后返回**：调用 `invalidate()` + `force: true` 强制重新请求
+- **并行请求**：多个独立接口使用 `Future.wait` 并行化，减少等待时间
+- **批量统计**：题目数量统计使用 `GROUP BY` 批量接口一次性返回全部，避免 N+1 问题
+
+---
+
 ## 7. 练习模式设计
 
 ### 三种练习模式
@@ -271,21 +340,23 @@ OSS配置：
 
 #### 错题模式
 
-- 从选定题库中筛选错题
-- 最小错误次数滑块：Slider控件，范围1-10，默认值1
-- 默认（最小错误次数=1）：筛选`wrong >= 1`的所有错题
-- 设置为3：筛选`wrong >= 3`的题目
+- 从选定题库中筛选未掌握的题目
+- 掌握程度滑块：Slider控件，范围 -1（不会）到 1（掌握），默认值 0（模糊及以下）
+- `min_score=0`：筛选 `score <= 0` 的所有未掌握题目
+- `min_score=-1`：仅筛选 `score <= -1` 的题目（完全不会）
 
 ### 后端API
 
-- `GET /api/qas/random/list?limit=10&category_id=`：随机取题
+- `GET /api/qas/random/list?limit=10&category_id=`：随机取题（单选）
+- `GET /api/qas/random/list?limit=10&category_ids=a,b,c`：随机取题（多选，逗号分隔）
 - `GET /api/qas/sequential/list?limit=10&category_id=&offset_id=`：顺序取题，按`random_int`升序
-- `GET /api/qas/wrong/list?limit=10&category_id=&min_wrong=1`：错题筛选，`wrong >= min_wrong`
+- `GET /api/qas/wrong/list?limit=10&category_id=&min_score=0`：未掌握题目筛选，`score <= min_score`
 
 ### DAO层实现
 
+- `random_query()`：`ORDER BY RAND()`，MySQL随机取题
 - `sequential_query()`：`ORDER BY random_int ASC`，支持`offset_id`跳过已答题目
-- `wrong_query()`：`WHERE wrong >= min_wrong ORDER BY wrong DESC`
+- `wrong_query()`：`WHERE score <= min_score ORDER BY score ASC`，按掌握程度筛选
 
 ### 答题交互
 
@@ -358,6 +429,8 @@ OSS配置：
 | `GET/POST /api/banks` | 题库列表/创建 |
 | `PUT/DELETE /api/banks/:id` | 更新/删除题库 |
 | `GET /api/banks/tree` | 题库树 |
+| `GET /api/banks/question-counts` | 题库题目数量统计（仅直接题目） |
+| `GET /api/banks/descendant-counts` | 题库题目数量统计（含所有后代聚合） |
 | `GET/POST /api/tags` | 标签列表/创建 |
 | `PUT/DELETE /api/tags/:id` | 更新/删除标签 |
 | `POST /api/tags/batch` | 批量获取标签 |
@@ -412,7 +485,39 @@ _banks.isEmpty
 
 ---
 
-## 11. 附录：MySQL字段类型
+## 12. 每日练习题库选择设计
+
+### 入口流程
+
+APP启动 → `DailyQuizPage` → 选择题库 → 答1题 → 进入主页
+
+### 题库选择页面
+
+展示所有根级别题库（`parent_id` 为空的题库），每个题库卡片显示：
+
+- 题库名称
+- 聚合题数：**自身题目 + 所有子题库 + 孙子题库……递归求和**
+
+点击题库后，收集该题库及其所有后代题库的ID列表，通过 `category_ids` 参数传给随机题目接口，确保练习覆盖整个题库子树。
+
+### 后端接口
+
+- `GET /api/banks/descendant-counts`：返回 `{bank_id: total_count}`，每个题库的题数 = 自身 + 所有后代递归聚合
+- `GET /api/qas/random/list?category_ids=a,b,c`：支持逗号分隔的多个题库ID
+
+### 实现要点
+
+```python
+# descendant_counts 递归聚合逻辑
+def descendant_counts(db):
+    direct = question_counts(db)          # {bank_id: 直接题数}
+    banks = get_all(db)                   # 全部题库
+    children_map = parent→[child_ids]     # 构建父子映射
+    # 递归: bank的total = 直接题数 + Σ(child的total)
+    return {b.id: aggregate(b.id) for b in banks}
+```
+
+前端通过 `Future.wait` 并行获取 bank tree + descendant counts 后渲染。
 
 MySQL的表字段类型有5类。
 

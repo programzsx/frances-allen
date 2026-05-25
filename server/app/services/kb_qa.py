@@ -12,6 +12,16 @@ def _qa_to_dict(row) -> dict:
     d = {c.name: getattr(row, c.name) for c in row.__table__.columns}
     if d.get("answer"):
         d["answer"] = json.loads(d["answer"])
+    # tag_id 在 DB 中可能是 JSON 字符串或普通字符串，统一解析为列表
+    if d.get("tag_id"):
+        raw = d["tag_id"]
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                d["tag_id"] = parsed
+        except (json.JSONDecodeError, TypeError):
+            # 普通字符串，保持原样（Flutter 端 _parseTagId 会处理）
+            pass
     return d
 
 
@@ -19,9 +29,10 @@ def create_qa(db: Session, bo: QaCreateBO) -> dict:
     if qa_dao.get_by_question(db, bo.question):
         raise ValueError(f"题目已存在")
     # 校验 category_id 存在
-    bank = bank_dao.get_by_id(db, bo.category_id)
-    if not bank:
-        raise ValueError(f"知识分类 {bo.category_id} 不存在")
+    if bo.category_id:
+        bank = bank_dao.get_by_id(db, bo.category_id)
+        if not bank:
+            raise ValueError(f"知识分类 {bo.category_id} 不存在")
 
     now = _now()
     data = {
@@ -82,8 +93,8 @@ def page_qa(
     }
 
 
-def random_qa(db: Session, limit: int = 10, category_id: Optional[str] = None) -> list[dict]:
-    items = qa_dao.random_query(db, limit, category_id)
+def random_qa(db: Session, limit: int = 10, category_id: Optional[str] = None, category_ids: Optional[list[str]] = None) -> list[dict]:
+    items = qa_dao.random_query(db, limit, category_id, category_ids)
     return [_qa_to_dict(item) for item in items]
 
 

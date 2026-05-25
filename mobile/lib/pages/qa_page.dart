@@ -7,7 +7,7 @@ import 'qa_detail_page.dart';
 import 'qa_form_page.dart';
 import 'bank_page.dart';
 import 'tag_page.dart';
-import 'practice_page.dart';
+import 'image_manage_page.dart';
 import 'question_rich_text.dart';
 import '../theme/app_theme.dart';
 
@@ -158,8 +158,16 @@ class _QaPageState extends State<QaPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('题目'),
+        title: const Text('考试'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.image_outlined, size: 22),
+            tooltip: '图片',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ImageManagePage()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.sell_outlined, size: 22),
             tooltip: '标签',
@@ -185,14 +193,6 @@ class _QaPageState extends State<QaPage> {
               _currentPage = 1;
               _fetch();
             }),
-          ),
-          IconButton(
-            icon: const Icon(Icons.school_outlined, size: 22),
-            tooltip: '练习',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const PracticePage()),
-            ),
           ),
         ],
       ),
