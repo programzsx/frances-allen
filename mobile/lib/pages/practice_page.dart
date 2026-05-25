@@ -21,11 +21,13 @@ class _PracticePageState extends State<PracticePage> {
   PracticeMode _mode = PracticeMode.random;
   int _minScore = 0;
   bool _loading = false;
-  int _bankTotal = 0;
+  int _bankTotal = 0; // 选中题库的后代总题数（0=未选/全库）
 
   // Bank drill-down state
-  List<KbBank> _bankTree = [];
-  List<KbBank> _drillPath = [];
+  List<Map<String, dynamic>> _bankTreeRaw = []; // tree from API
+  Map<String, Map<String, dynamic>> _bankNodeMap = {}; // id → node
+  Map<String, int> _descendantCounts = {};
+  List<_NavStep> _drillPath = [];
   bool _treeLoading = true;
 
   @override
@@ -41,10 +43,21 @@ class _PracticePageState extends State<PracticePage> {
 
   Future<void> _loadBankTree() async {
     try {
-      final data = await ApiService.getBankTree();
+      final results = await Future.wait([
+        ApiService.getBankTree(),
+        ApiService.getDescendantCounts(),
+      ]);
+      final tree = results[0] as List<dynamic>;
+      final counts = results[1] as Map<String, int>;
+
+      final nodeMap = <String, Map<String, dynamic>>{};
+      _buildNodeMap(tree.cast<Map<String, dynamic>>(), nodeMap);
+
       if (mounted) {
         setState(() {
-          _bankTree = data.map((e) => KbBank.fromJson(e)).toList();
+          _bankTreeRaw = tree.cast<Map<String, dynamic>>();
+          _bankNodeMap = nodeMap;
+          _descendantCounts = counts;
           _treeLoading = false;
         });
       }
@@ -53,16 +66,29 @@ class _PracticePageState extends State<PracticePage> {
     }
   }
 
-  /// 当前展示的银行列表（根或某层的 children）
-  List<KbBank> get _currentBanks {
-    if (_drillPath.isEmpty) return _bankTree;
-    return _drillPath.last.children;
+  void _buildNodeMap(List<Map<String, dynamic>> nodes, Map<String, Map<String, dynamic>> map) {
+    for (final node in nodes) {
+      map[node['id'] as String] = node;
+      final children = node['children'] as List<dynamic>?;
+      if (children != null) _buildNodeMap(children.cast<Map<String, dynamic>>(), map);
+    }
+  }
+
+  /// 当前展示的题库列表（根或某层的 children）
+  List<Map<String, dynamic>> get _currentBanks {
+    if (_drillPath.isEmpty) return _bankTreeRaw;
+    final node = _bankNodeMap[_drillPath.last.id];
+    if (node == null) return [];
+    final children = node['children'] as List<dynamic>?;
+    return children?.cast<Map<String, dynamic>>() ?? [];
   }
 
   /// 下钻到子题库
-  void _drillInto(KbBank bank) {
+  void _drillInto(String bankId) {
+    final node = _bankNodeMap[bankId];
+    if (node == null) return;
     setState(() {
-      _drillPath.add(bank);
+      _drillPath.add(_NavStep(id: bankId, name: node['name'] as String));
     });
   }
 
@@ -82,16 +108,22 @@ class _PracticePageState extends State<PracticePage> {
 
   /// 选中当前层级题库作为练习目标
   void _selectCurrentLevelBank() {
-    final bank = _drillPath.isNotEmpty ? _drillPath.last : null;
-    if (bank == null) return;
-    _selectBank(bank);
+    if (_drillPath.isEmpty) return;
+    final node = _bankNodeMap[_drillPath.last.id];
+    if (node == null) return;
+    _selectBankById(_drillPath.last.id, node['name'] as String);
   }
 
-  void _selectBank(KbBank bank) {
+  void _selectBankById(String bankId, String bankName) {
     setState(() {
-      _selectedBank = bank;
+      _selectedBank = KbBank(
+        id: bankId,
+        createTime: '',
+        updateTime: '',
+        name: bankName,
+      );
     });
-    _loadBankTotal(bank);
+    _bankTotal = _descendantCounts[bankId] ?? 0;
   }
 
   void _clearSelection() {
@@ -101,35 +133,51 @@ class _PracticePageState extends State<PracticePage> {
     });
   }
 
-  Future<void> _loadBankTotal(KbBank bank) async {
-    try {
-      final data = await ApiService.pageQas(categoryId: bank.id, pageSize: 1);
-      if (mounted) setState(() => _bankTotal = data['total']);
-    } catch (_) {}
+  /// 收集节点自身及所有后代ID
+  List<String> _collectDescendantIds(Map<String, dynamic> node) {
+    final ids = <String>[node['id'] as String];
+    final children = node['children'] as List<dynamic>?;
+    if (children != null) {
+      for (final child in children) {
+        ids.addAll(_collectDescendantIds(child as Map<String, dynamic>));
+      }
+    }
+    return ids;
   }
 
   Future<void> _startPractice() async {
-    if (_selectedBank == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先选择题库')));
-      return;
-    }
     setState(() => _loading = true);
     try {
-      List<dynamic> data;
-      switch (_mode) {
-        case PracticeMode.random:
-          data = await ApiService.getAllQasForBank(categoryId: _selectedBank!.id);
-          data = List.from(data)..shuffle(Random());
-          break;
-        case PracticeMode.sequential:
-          data = await ApiService.getAllQasForBank(categoryId: _selectedBank!.id);
-          break;
-        case PracticeMode.wrong:
-          data = await ApiService.wrongQas(limit: 9999, categoryId: _selectedBank!.id, minScore: _minScore);
-          break;
+      List<KbQa> qas;
+
+      if (_selectedBank != null) {
+        // 选中题库 → 获取该题库及其后代的所有题目
+        final node = _bankNodeMap[_selectedBank!.id];
+        final categoryIds = node != null ? _collectDescendantIds(node) : <String>[_selectedBank!.id];
+        final allData = await ApiService.getAllQasForBank();
+        qas = allData
+            .map((e) => KbQa.fromJson(e))
+            .where((q) => categoryIds.contains(q.categoryId))
+            .toList();
+      } else {
+        // 未选题库 → 全库所有题目
+        final allData = await ApiService.getAllQasForBank();
+        qas = allData.map((e) => KbQa.fromJson(e)).toList();
       }
 
-      final qas = data.map((e) => KbQa.fromJson(e)).toList();
+      // 根据模式处理
+      switch (_mode) {
+        case PracticeMode.random:
+          qas.shuffle(Random());
+          break;
+        case PracticeMode.sequential:
+          // 保持原顺序
+          break;
+        case PracticeMode.wrong:
+          // 错题模式：从已获取的题目中按 wrong 次数筛选
+          qas = qas.where((q) => q.wrong > _minScore).toList();
+          break;
+      }
 
       if (qas.isEmpty) {
         setState(() => _loading = false);
@@ -147,7 +195,7 @@ class _PracticePageState extends State<PracticePage> {
           MaterialPageRoute(
             builder: (_) => PracticeQuizPage(
               questions: qas,
-              bank: _selectedBank!,
+              bank: _selectedBank,
             ),
           ),
         );
@@ -212,7 +260,11 @@ class _PracticePageState extends State<PracticePage> {
                         ? SizedBox(width: 20.w, height: 20.w, child: const CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                         : const Icon(Icons.play_arrow, color: Colors.white),
                     label: Text(
-                      _loading ? '加载中...' : _selectedBank != null ? '开始练习 (${_bankTotal} 题)' : '开始练习',
+                      _loading
+                          ? '加载中...'
+                          : _selectedBank != null
+                              ? '开始练习 ($_bankTotal 题)'
+                              : '开始练习（全部题库）',
                       style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'Inter'),
                     ),
                     style: ElevatedButton.styleFrom(
@@ -382,16 +434,18 @@ class _PracticePageState extends State<PracticePage> {
   }
 
   /// 单个题库卡片
-  Widget _buildBankChip(KbBank bank) {
-    final hasChildren = bank.children.isNotEmpty;
-    final isSelected = _selectedBank?.id == bank.id;
+  Widget _buildBankChip(Map<String, dynamic> bank) {
+    final id = bank['id'] as String;
+    final name = bank['name'] as String;
+    final hasChildren = (bank['children'] as List<dynamic>?)?.isNotEmpty ?? false;
+    final isSelected = _selectedBank?.id == id;
 
     return GestureDetector(
       onTap: () {
         if (hasChildren) {
-          _drillInto(bank);
+          _drillInto(id);
         } else {
-          _selectBank(bank);
+          _selectBankById(id, name);
         }
       },
       child: Container(
@@ -414,7 +468,7 @@ class _PracticePageState extends State<PracticePage> {
             ),
             SizedBox(width: 6.w),
             Text(
-              bank.name,
+              name,
               style: TextStyle(
                 fontSize: 13.sp,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
@@ -529,8 +583,8 @@ class _PracticePageState extends State<PracticePage> {
 
 class PracticeQuizPage extends StatefulWidget {
   final List<KbQa> questions;
-  final KbBank bank;
-  const PracticeQuizPage({super.key, required this.questions, required this.bank});
+  final KbBank? bank;
+  const PracticeQuizPage({super.key, required this.questions, this.bank});
 
   @override
   State<PracticeQuizPage> createState() => _PracticeQuizPageState();
@@ -554,7 +608,9 @@ class _PracticeQuizPageState extends State<PracticeQuizPage> {
       _questions.length,
       (i) => List.generate(_questions[i].answer.length, (_) => TextEditingController()),
     );
-    _categoryMap = {widget.bank.id: widget.bank};
+    if (widget.bank != null) {
+      _categoryMap = {widget.bank!.id: widget.bank!};
+    }
   }
 
   @override
@@ -673,11 +729,12 @@ class _PracticeQuizPageState extends State<PracticeQuizPage> {
                               Expanded(
                                 child: Text('第 ${_currentIndex + 1} 题', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16.sp, fontFamily: 'Inter', color: AppTheme.textPrimary)),
                               ),
-                              Chip(
-                                label: Text(widget.bank.name, style: TextStyle(fontSize: 11.sp, fontFamily: 'Inter')),
-                                backgroundColor: AppTheme.bgSection,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.r)),
-                              ),
+                              if (widget.bank != null)
+                                Chip(
+                                  label: Text(widget.bank!.name, style: TextStyle(fontSize: 11.sp, fontFamily: 'Inter')),
+                                  backgroundColor: AppTheme.bgSection,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.r)),
+                                ),
                               SizedBox(width: 8.w),
                               IconButton(
                                 icon: const Icon(Icons.close_rounded, size: 20),
@@ -928,4 +985,11 @@ class _PracticeQuizPageState extends State<PracticeQuizPage> {
         ),
     );
   }
+}
+
+/// 面包屑导航步骤
+class _NavStep {
+  final String id;
+  final String name;
+  const _NavStep({required this.id, required this.name});
 }
