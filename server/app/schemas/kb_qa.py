@@ -20,6 +20,9 @@ class QaUpdateBO(BaseModel):
     tag_id: Optional[Union[str, list[str]]] = Field(None, description="标签ID")
     sort_order: Optional[int] = Field(None, description="排序值")
     score: Optional[int] = Field(None, ge=-1, le=1, description="掌握程度 -1/0/1")
+    total: Optional[int] = Field(None, ge=0, description="总练习次数")
+    right: Optional[int] = Field(None, ge=0, description="答对次数")
+    wrong: Optional[int] = Field(None, ge=0, description="答错次数")
 
     @field_validator("tag_id", mode="before")
     @classmethod
@@ -42,6 +45,9 @@ class QaVO(BaseModel):
     sort_order: int = 0
     random_int: int = 0
     score: int = 0
+    total: int = 0
+    right: int = 0
+    wrong: int = 0
     category_id: str
     tag_id: Optional[str] = None
 

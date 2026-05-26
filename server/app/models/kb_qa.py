@@ -19,6 +19,9 @@ class KbQa(Base):
     sort_order = Column(Integer, nullable=False, default=0, comment="排序值")
     random_int = Column(Integer, nullable=False, unique=True, comment="随机值自增")
     score = Column(Integer, nullable=False, default=0, comment="掌握程度 -1/0/1")
+    total = Column(Integer, nullable=False, default=0, comment="总练习次数")
+    right = Column(Integer, nullable=False, default=0, comment="答对次数")
+    wrong = Column(Integer, nullable=False, default=0, comment="答错次数")
 
     # 关联字段
     category_id = Column(String(64), nullable=True, comment="所属知识分类ID")
