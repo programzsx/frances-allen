@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import 'question_rich_text.dart';
@@ -25,6 +26,11 @@ class _PracticePageState extends State<PracticePage> {
   bool _loading = false;
   int _bankTotal = 0; // 选中题库的后代总题数（0=未选/全库）
 
+  // 强制练习配置状态
+  String? _forcedBankId;
+  String? _forcedBankName;
+  List<String>? _forcedCategoryIds;
+
   // Bank drill-down state
   List<Map<String, dynamic>> _bankTreeRaw = []; // tree from API
   Map<String, Map<String, dynamic>> _bankNodeMap = {}; // id → node
@@ -36,6 +42,7 @@ class _PracticePageState extends State<PracticePage> {
   void initState() {
     super.initState();
     _loadBankTree();
+    _loadForcedConfig();
   }
 
   @override
@@ -137,6 +144,72 @@ class _PracticePageState extends State<PracticePage> {
       _selectedBank = null;
       _bankTotal = 0;
     });
+  }
+
+  /// 加载已保存的强制练习配置
+  Future<void> _loadForcedConfig() async {
+    final prefs = await SharedPreferences.getInstance();
+    final id = prefs.getString('forced_quiz_bank_id');
+    final name = prefs.getString('forced_quiz_bank_name');
+    final idsStr = prefs.getString('forced_quiz_category_ids');
+    if (id != null && idsStr != null && idsStr.isNotEmpty) {
+      if (mounted) {
+        setState(() {
+          _forcedBankId = id;
+          _forcedBankName = name;
+          _forcedCategoryIds = idsStr.split(',');
+        });
+      }
+    }
+  }
+
+  /// 配置当前选中题库为APP入口强制练习题库
+  Future<void> _configureForcedQuiz() async {
+    if (_selectedBank == null) return;
+    final node = _bankNodeMap[_selectedBank!.id];
+    final categoryIds = node != null
+        ? _collectDescendantIds(node)
+        : <String>[_selectedBank!.id];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('forced_quiz_bank_id', _selectedBank!.id);
+    await prefs.setString('forced_quiz_bank_name', _selectedBank!.name);
+    await prefs.setString('forced_quiz_category_ids', categoryIds.join(','));
+    if (mounted) {
+      setState(() {
+        _forcedBankId = _selectedBank!.id;
+        _forcedBankName = _selectedBank!.name;
+        _forcedCategoryIds = categoryIds;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('已配置强制练习：${_selectedBank!.name}'),
+          duration: const Duration(seconds: 1),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  /// 清除强制练习配置，恢复全库随机
+  Future<void> _clearForcedQuiz() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('forced_quiz_bank_id');
+    await prefs.remove('forced_quiz_bank_name');
+    await prefs.remove('forced_quiz_category_ids');
+    if (mounted) {
+      setState(() {
+        _forcedBankId = null;
+        _forcedBankName = null;
+        _forcedCategoryIds = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('已清除强制练习配置，恢复全库随机'),
+          duration: Duration(seconds: 1),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   /// 收集节点自身及所有后代ID
@@ -248,6 +321,12 @@ class _PracticePageState extends State<PracticePage> {
                 _buildBankDrilldown(),
                 SizedBox(height: 24.h),
 
+                // ── 强制练习配置 ──
+                if (_selectedBank != null) ...[
+                  _buildForcedQuizConfig(),
+                  SizedBox(height: 24.h),
+                ],
+
                 Text('练习模式', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.sp, fontFamily: 'Inter', color: AppTheme.textPrimary)),
                 SizedBox(height: 8.h),
                 _buildModeSelector(),
@@ -282,6 +361,99 @@ class _PracticePageState extends State<PracticePage> {
             ),
           ),
         ),
+    );
+  }
+
+  // ═══════════════════════════════════════════
+  // 强制练习配置 UI
+  // ═══════════════════════════════════════════
+
+  Widget _buildForcedQuizConfig() {
+    final isCurrentForced = _forcedBankId == _selectedBank!.id;
+
+    return Container(
+      padding: EdgeInsets.all(14.w),
+      decoration: BoxDecoration(
+        color: isCurrentForced ? AppTheme.indigo50 : AppTheme.bgCard,
+        borderRadius: BorderRadius.circular(10.r),
+        border: Border.all(
+          color: isCurrentForced ? AppTheme.primary.withAlpha(100) : AppTheme.border,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isCurrentForced ? Icons.check_circle : Icons.touch_app_outlined,
+                size: 18.sp,
+                color: isCurrentForced ? AppTheme.primary : AppTheme.textTertiary,
+              ),
+              SizedBox(width: 8.w),
+              Text(
+                'APP入口强制练习',
+                style: TextStyle(
+                  fontSize: 13.sp,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textPrimary,
+                  fontFamily: 'Inter',
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 10.h),
+          if (isCurrentForced) ...[
+            // 已配置当前题库
+            Text(
+              '当前题库「$_forcedBankName」已设为APP启动时的强制练习来源',
+              style: TextStyle(fontSize: 12.sp, color: AppTheme.textSecondary),
+            ),
+            SizedBox(height: 10.h),
+            SizedBox(
+              width: double.infinity,
+              height: 36.h,
+              child: OutlinedButton.icon(
+                onPressed: _clearForcedQuiz,
+                icon: Icon(Icons.close, size: 16.sp),
+                label: Text('清除配置，恢复全库随机', style: TextStyle(fontSize: 12.sp)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.textSecondary,
+                  side: BorderSide(color: AppTheme.border),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
+                  padding: EdgeInsets.symmetric(horizontal: 12.w),
+                ),
+              ),
+            ),
+          ] else ...[
+            // 未配置或配置了其他题库
+            if (_forcedBankId != null) ...[
+              Text(
+                '当前强制练习来源是「$_forcedBankName」，选择下方按钮可更换',
+                style: TextStyle(fontSize: 12.sp, color: AppTheme.textTertiary),
+              ),
+              SizedBox(height: 8.h),
+            ],
+            SizedBox(
+              width: double.infinity,
+              height: 36.h,
+              child: OutlinedButton.icon(
+                onPressed: _configureForcedQuiz,
+                icon: Icon(Icons.lock_outline, size: 16.sp, color: AppTheme.primary),
+                label: Text(
+                  '配置「${_selectedBank!.name}」为强制练习',
+                  style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600, color: AppTheme.primary),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppTheme.primary),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
+                  padding: EdgeInsets.symmetric(horizontal: 12.w),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import 'question_rich_text.dart';
@@ -20,10 +21,14 @@ class _DailyQuizPageState extends State<DailyQuizPage> {
   List<TextEditingController> _answerCtrls = [];
   bool _allDone = false;
 
+  // ── 强制练习配置 ──
+  String? _forcedBankName;
+  List<String>? _forcedCategoryIds;
+
   @override
   void initState() {
     super.initState();
-    _fetchQuestion();
+    _loadConfigAndFetch();
   }
 
   @override
@@ -36,9 +41,27 @@ class _DailyQuizPageState extends State<DailyQuizPage> {
   // 题目加载
   // ═══════════════════════════════════════════
 
+  Future<void> _loadConfigAndFetch() async {
+    final prefs = await SharedPreferences.getInstance();
+    final idsStr = prefs.getString('forced_quiz_category_ids');
+    final name = prefs.getString('forced_quiz_bank_name');
+    if (idsStr != null && idsStr.isNotEmpty && mounted) {
+      setState(() {
+        _forcedCategoryIds = idsStr.split(',');
+        _forcedBankName = name;
+      });
+    }
+    _fetchQuestion();
+  }
+
   Future<void> _fetchQuestion() async {
     try {
-      final data = await ApiService.randomQas(limit: 1);
+      final data = await ApiService.randomQas(
+        limit: 1,
+        categoryIds: (_forcedCategoryIds != null && _forcedCategoryIds!.isNotEmpty)
+            ? _forcedCategoryIds
+            : null,
+      );
       if (data.isNotEmpty && mounted) {
         setState(() {
           _question = KbQa.fromJson(data[0]);
@@ -149,6 +172,17 @@ class _DailyQuizPageState extends State<DailyQuizPage> {
                             style: TextStyle(fontSize: 13.sp, color: AppTheme.textSecondary, fontFamily: 'Inter')),
                       ],
                     ),
+                    if (_forcedBankName != null) ...[
+                      SizedBox(height: 6.h),
+                      Row(
+                        children: [
+                          Icon(Icons.turned_in, size: 12.sp, color: AppTheme.primary),
+                          SizedBox(width: 4.w),
+                          Text('题库：$_forcedBankName',
+                            style: TextStyle(fontSize: 11.sp, color: AppTheme.primary, fontFamily: 'Inter')),
+                        ],
+                      ),
+                    ],
                     SizedBox(height: 8.h),
                     ClipRRect(
                       borderRadius: BorderRadius.circular(4.r),
